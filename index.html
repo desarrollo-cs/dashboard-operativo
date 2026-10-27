@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Dashboard operativo — SAC, Cobros, Crédito y Ventas</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" type="image/svg+xml" href="assets/isotipo.svg">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <!-- Iconos de departamento: trazo celeste dentro de círculo azul -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-general" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></symbol>
+    <symbol id="i-sac" viewBox="0 0 24 24"><path d="M4.5 14v-2a7.5 7.5 0 0 1 15 0v2"/><path d="M4.5 14h3v5.5h-2a1 1 0 0 1-1-1z"/><path d="M19.5 14h-3v5.5h2a1 1 0 0 0 1-1z"/><path d="M18 19.5c0 1.2-2 2-5 2"/></symbol>
+    <symbol id="i-ventas" viewBox="0 0 24 24"><path d="M3.5 17l5.5-5.5 4 4 7.5-7.5"/><path d="M14.5 8h6v6"/></symbol>
+    <symbol id="i-cobros" viewBox="0 0 24 24"><path d="M3.5 7.5h14.5a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1-2.5 2.5H3.5z"/><path d="M3.5 7.5v-1a2 2 0 0 1 2-2h10"/><circle cx="16" cy="13.5" r="1.3"/></symbol>
+    <symbol id="i-credito" viewBox="0 0 24 24"><rect x="2.5" y="5.5" width="19" height="13" rx="2"/><path d="M2.5 10h19"/><path d="M6 15h4"/></symbol>
+  </svg>
+
+  <header class="masthead">
+    <div class="masthead__title">
+      <h1 id="pageTitle">Dashboard operativo — SAC, Cobros, Crédito y Ventas <span class="masthead__period" id="periodLabel">| Período: cargando…</span></h1>
+      <p class="masthead__source" id="sourceLabel">Cargando datos…</p>
+    </div>
+    <div class="masthead__logo">
+      <img src="assets/logo-customer-touch.svg" alt="Customer Touch" width="134" height="34">
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Vistas del dashboard">
+    <button class="tab" role="tab" id="tab-general" aria-controls="panel-general" aria-selected="true" data-tab="general">
+      <span class="dept-icon" aria-hidden="true"><svg><use href="#i-general"/></svg></span>General</button>
+    <button class="tab" role="tab" id="tab-sac" aria-controls="panel-sac" aria-selected="false" data-tab="sac" tabindex="-1">
+      <span class="dept-icon" aria-hidden="true"><svg><use href="#i-sac"/></svg></span>Operativa SAC</button>
+    <button class="tab" role="tab" id="tab-ventas" aria-controls="panel-ventas" aria-selected="false" data-tab="ventas" tabindex="-1">
+      <span class="dept-icon" aria-hidden="true"><svg><use href="#i-ventas"/></svg></span>Operativa Ventas</button>
+    <button class="tab" role="tab" id="tab-cobros" aria-controls="panel-cobros" aria-selected="false" data-tab="cobros" tabindex="-1">
+      <span class="dept-icon" aria-hidden="true"><svg><use href="#i-cobros"/></svg></span>Operativa Cobros</button>
+  </nav>
+
+  <section class="controls" aria-label="Filtros y datos">
+    <div class="filters" id="filters">
+      <fieldset class="filter filter--dept">
+        <legend>Departamento</legend>
+        <div class="chips" id="fDepts"></div>
+      </fieldset>
+      <div class="filter filter--camp">
+        <label for="fCampBtn">Campaña</label>
+        <div class="multiselect" id="fCamp">
+          <button type="button" class="multiselect__btn" id="fCampBtn" aria-haspopup="true" aria-expanded="false">Todas</button>
+          <div class="multiselect__panel" id="fCampPanel" hidden>
+            <div class="multiselect__actions">
+              <button type="button" data-act="all">Seleccionar todas</button>
+              <button type="button" data-act="none">Ninguna</button>
+            </div>
+            <div class="multiselect__list" id="fCampList"></div>
+          </div>
+        </div>
+      </div>
+      <div class="filter filter--dates">
+        <span class="filter__label">Fecha</span>
+        <div class="filter__pair">
+          <label class="sr-only" for="fFrom">Desde</label><input type="date" id="fFrom" aria-label="Fecha desde">
+          <span aria-hidden="true">a</span>
+          <label class="sr-only" for="fTo">Hasta</label><input type="date" id="fTo" aria-label="Fecha hasta">
+        </div>
+      </div>
+      <div class="filter">
+        <label for="fMonth">Mes</label>
+        <select id="fMonth"><option value="">Todos</option></select>
+      </div>
+      <div class="filter filter--months">
+        <span class="filter__label">Rango de meses</span>
+        <div class="filter__pair">
+          <select id="fMonthFrom" aria-label="Mes desde"><option value="">Desde</option></select>
+          <select id="fMonthTo" aria-label="Mes hasta"><option value="">Hasta</option></select>
+        </div>
+      </div>
+      <div class="filter filter--actions">
+        <button type="button" class="btn btn--ghost" id="btnReset">Restablecer filtros</button>
+      </div>
+    </div>
+    <div class="datasource">
+      <label class="btn btn--primary" for="fileInput">Cargar Excel de inConcert</label>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm" hidden>
+      <button type="button" class="btn btn--ghost" id="btnExport" disabled>Exportar dataset anonimizado</button>
+      <span class="datasource__status" id="loadStatus" role="status" aria-live="polite"></span>
+    </div>
+    <ul class="alerts" id="alerts" aria-label="Avisos de calidad de datos"></ul>
+  </section>
+
+  <main class="panels">
+    <section class="panel" id="panel-general" role="tabpanel" aria-labelledby="tab-general"></section>
+    <section class="panel" id="panel-sac" role="tabpanel" aria-labelledby="tab-sac" hidden></section>
+    <section class="panel" id="panel-ventas" role="tabpanel" aria-labelledby="tab-ventas" hidden></section>
+    <section class="panel" id="panel-cobros" role="tabpanel" aria-labelledby="tab-cobros" hidden></section>
+  </main>
+
+  <footer class="foot">
+    <p>Los archivos cargados se procesan solo en este navegador; no se envían a ningún servicio externo.</p>
+  </footer>
+
+  <script src="vendor/echarts.min.js"></script>
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/parser.js"></script>
+  <script src="js/metrics.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

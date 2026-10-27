@@ -1,0 +1,11 @@
+{
+  "name": "dashboard-operativo-coocique",
+  "private": true,
+  "description": "Dashboard operativo SAC, Cobros, Crédito y Ventas (inConcert) para GitHub Pages",
+  "scripts": {
+    "serve": "python3 -m http.server 8000",
+    "qa": "node scripts/qa-check.mjs",
+    "build-data": "node scripts/build-dataset.mjs"
+  },
+  "engines": { "node": ">=18" }
+}
