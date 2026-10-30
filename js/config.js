@@ -11,6 +11,8 @@
     heatmapMinCalls: 5,
     partialDayMarginMin: 60,     // Margen mínimo (min) para confirmar un día parcial frente a días comparables          // Celdas del mapa de calor con < 5 ofrecidas muestran «—»
     topAgents: 10,
+    findingsMinN: 20,            // Volumen mínimo de una franja, día o agente para sustentar un hallazgo
+    findingsRetryMin: 3,         // Intentos mínimos por número para el hallazgo de reintentos sin conexión
     waitBuckets: [
       { label: '0–10 s', max: 10 },
       { label: '11–20 s', max: 20 },

@@ -13,6 +13,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CONFIG = require(resolve(root, 'js/config.js'));
 const P = require(resolve(root, 'js/parser.js'));
 const M = require(resolve(root, 'js/metrics.js'));
+const FN = require(resolve(root, 'js/findings.js'));
 
 let fails = 0;
 const ok = (name, cond, detail = '') => {
@@ -88,6 +89,18 @@ ok('Embudo Ventas: etapas anidadas', sub(v.funnel), JSON.stringify(v.funnel.map(
 ok('Embudos Cobros: contestadas ≤ intentos, con agente ≤ contestadas',
   ['Manual', 'Marcación'].every((m) => c.modes[m].contestadas <= c.modes[m].intentos && c.modes[m].con <= c.modes[m].contestadas));
 ok('Nivel de servicio ≤ atendidas ≤ ofrecidas', sac.sl20 <= sac.atendidas && sac.atendidas <= sac.ofrecidas);
+ok('Nivel de servicio = atendidas / atendidas (100 % con atendidas)', sac.atendidas ? sac.ns === 100 : sac.ns === null, String(sac.ns));
+ok('«Atendidas en ≤20 s / ofrecidas» se conserva aparte', Math.abs(sac.pctSl20 - sac.sl20 / sac.ofrecidas * 100) < 1e-9);
+ok('Integridad: incluidos + excluidos = registros cargados', qa.included + qa.excludedTotal === ds.records.length);
+ok('Filtrar no altera los registros', M.applyFilters(model, { dateFrom: '2099-01-01' }).length === 0 && model.records.length === qa.included);
+const fd = {
+  General: FN.general(recs, g),
+  SAC: FN.inbound(recs.filter((r) => r.dept === 'SAC' && r.d === 'E'), sac, 'SAC'),
+  Ventas: FN.ventas(recs.filter((r) => r.dept === 'Ventas' && r.d === 'S'), v),
+  Cobros: FN.cobros(recs.filter((r) => r.dept === 'Cobros' && r.d === 'S'), c)
+};
+Object.entries(fd).forEach(([k, list]) => ok(`Hallazgos ${k}: ≤ 4 y con dato e implicación`, list.length <= 4 && list.every((x) => x.title && x.evidence && x.implication), `${list.length} hallazgos`));
+ok('Hallazgos de Cobros sin tipificaciones', !fd.Cobros.some((x) => /tipific|compromis|contacto efectivo/i.test(x.title + x.evidence)));
 
 console.log(`\nResultado: ${fails === 0 ? 'todos los controles superados' : fails + ' control(es) fallido(s)'}`);
 process.exit(fails ? 1 : 0);

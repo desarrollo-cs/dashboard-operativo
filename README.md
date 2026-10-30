@@ -1,6 +1,8 @@
 # Dashboard operativo — SAC, Cobros, Crédito y Ventas
 
-Dashboard web estático para el reporte de llamadas de inConcert «ReportDetailInOutCallsByCampaign» de Coocique. No usa backend ni credenciales. Las páginas son General, Operativa SAC, Operativa Ventas y Operativa Cobros. Crédito se integra en General, en los filtros y en la vista SAC.
+Dashboard web estático para el reporte de llamadas de inConcert «ReportDetailInOutCallsByCampaign» de Coocique. No usa backend ni credenciales. Tiene cinco pestañas: General, Operativa SAC, Operativa Ventas, Operativa Cobros y Metodologías. Crédito se integra en General, en los filtros, en la vista SAC y en Metodologías.
+
+Cada vista operativa y General terminan, debajo de los gráficos, con cuatro **hallazgos operativos** calculados por reglas a partir de los datos filtrados. La pestaña **Metodologías** reúne las metodologías por departamento, los avisos de calidad de datos, el control de integridad de los registros y los botones «Cargar Excel» y «Exportar dataset anonimizado».
 
 Se publica en GitHub Pages y se actualiza a diario de una de dos formas:
 
@@ -17,7 +19,8 @@ Se publica en GitHub Pages y se actualiza a diario de una de dos formas:
 │   ├── parser.js               Excel → registros normalizados (navegador y Node)
 │   ├── metrics.js              Clasificación, filtros, indicadores y controles de calidad
 │   ├── charts.js               Gráficos ECharts
-│   └── app.js                  Interfaz, filtros, pestañas y metodología
+│   ├── findings.js             Hallazgos operativos (reglas sobre los datos filtrados)
+│   └── app.js                  Interfaz, filtros, pestañas, hallazgos y Metodologías
 ├── vendor/                     ECharts 5.5.1 y SheetJS 0.18.5 (locales, con licencias)
 ├── assets/                     Logo e isotipo vectoriales extraídos del manual de marca
 ├── data/dataset.json           Dataset integrado ANONIMIZADO (sin nombres ni teléfonos)
@@ -31,7 +34,7 @@ Se publica en GitHub Pages y se actualiza a diario de una de dos formas:
 
 ## Ejecutar localmente
 
-El navegador bloquea la lectura de `data/dataset.json` cuando se abre `index.html` con doble clic (`file://`). En ese modo el dashboard muestra un aviso y permite cargar el Excel con el botón.
+El navegador bloquea la lectura de `data/dataset.json` cuando se abre `index.html` con doble clic (`file://`). En ese modo el dashboard muestra un aviso y permite cargar el Excel con el botón «Cargar Excel» de la pestaña Metodologías.
 
 Para ver el dataset integrado, sirve la carpeta:
 
@@ -70,10 +73,10 @@ Las Pages de un repositorio privado son públicas en los planes Free, Pro y Team
 
 Elige una de estas opciones.
 
-**A. Consulta inmediata, sin publicar.** Abre el sitio y pulsa «Cargar Excel de inConcert». El archivo se procesa en el navegador y todos los indicadores se recalculan. Nada se guarda ni se envía, y el sitio publicado no cambia.
+**A. Consulta inmediata, sin publicar.** Abre el sitio, ve a la pestaña **Metodologías** y pulsa «Cargar Excel». El archivo se procesa en el navegador y todos los indicadores se recalculan. Nada se guarda ni se envía, y el sitio publicado no cambia.
 
 **B. Actualizar el dataset publicado, sin instalar nada.**
-1. Carga el Excel con el botón y pulsa «Exportar dataset anonimizado».
+1. En la pestaña **Metodologías**, carga el Excel con «Cargar Excel» y pulsa «Exportar dataset anonimizado».
 2. Se descarga `dataset.json`. Los teléfonos quedan reemplazados por un hash SHA-256 con sal aleatoria descartada, y los nombres de contacto no se exportan.
 3. Reemplaza `data/dataset.json` en el repositorio. Puedes hacerlo en GitHub con «Add file → Upload files», o con:
 
@@ -128,7 +131,8 @@ Si el sitio no debe ser visible fuera de la organización, usa Pages con control
 | Entrante ofrecida | `Inic.` = Ent. y `Buscó agente` = Si |
 | Atendida / abandonada | Ofrecida con `Aten.` = Si / con `Ab.` = Si |
 | Abandono del sistema / del cliente | Abandonada con `Finalizador` = «ACD timeout» / = «Contacto». Los demás finalizadores se informan como «sin determinar». |
-| Nivel de servicio | Atendidas con `Tiempo Esp.` ≤ 20 s / ofrecidas |
+| Nivel de servicio | Atendidas / total de atendidas × 100. **Por construcción da 100 % siempre que haya atendidas** (y «—» si no hay). Es la definición vigente solicitada y está documentada en Metodologías. |
+| Atendidas en ≤ 20 s / ofrecidas | Atendidas con `Tiempo Esp.` ≤ 20 s / ofrecidas. Indicador separado que se conserva en SAC, Crédito y el embudo entrante de Cobros. |
 | Intento saliente | `Inic.` = Sal. El modo sale de `Tipo de Llamada saliente`. |
 | Conectada (con agente) | `Aten.` = Si |
 | Contestada | `Aten.` = Si o `Ab.` = Si |
@@ -155,7 +159,28 @@ Sobre la conversación de 0 s: en `coocique_central`, las 43 salientes conectada
 | Baja por desinterés | No le interesa realizar crédito, no le interesaron las condiciones, no le son atractivas las condiciones |
 | Otras tipificaciones (sin agrupar) | Todo lo demás. No se asigna por similitud. |
 
-**Cobros** no muestra tipificaciones, resultados de contacto ni compromisos.
+**Cobros** no muestra tipificaciones, resultados de contacto ni compromisos, tampoco en sus hallazgos.
+
+## Hallazgos operativos
+
+- Se calculan con los registros de la selección actual y cambian con los filtros. No contienen cifras estimadas.
+- Cada vista evalúa una lista ordenada de candidatos y muestra los cuatro primeros con sustento suficiente. Los candidatos son:
+  - abandono por franja horaria, tolerancia de espera y cortes por «ACD timeout»;
+  - carga por agente y transferencias;
+  - abandono del marcador, tipificación y bajas por riesgo;
+  - conexión por hora, reintentos sin conexión, comparación de modos y conexión por agente.
+- Una franja, día o agente necesita al menos 20 llamadas (`findingsMinN` en `js/config.js`). Los reintentos sin conexión cuentan números con 3 o más intentos y ninguna conectada (`findingsRetryMin`).
+- Si no hay volumen suficiente, se muestran menos hallazgos y se indica el motivo. Nunca se completan con datos inventados.
+- General presenta hallazgos consolidados entre departamentos. Crédito usa los de SAC cuando tiene datos.
+
+## Preservación de los datos
+
+- Ningún registro se borra, descarta ni sobrescribe al cargar, filtrar o exportar.
+- Las campañas «No tomar en cuenta» permanecen en los datos y en la exportación; solo se excluyen de los cálculos operativos.
+- Nulos, duplicados, inconsistencias y duraciones > 2 h se conservan; las reglas de cálculo se aplican sin eliminar registros.
+- Una carga vacía, inválida o incompatible no reemplaza los datos válidos: se conserva el último conjunto válido y se muestra el motivo.
+- «Exportar dataset anonimizado» funciona tanto con un Excel cargado como con el dataset integrado. En este último caso conserva los hashes existentes y exporta exactamente las mismas filas.
+- El control de integridad de Metodologías compara: filas leídas, registros conservados, registros exportables, excluidos de los cálculos, incluidos, visibles con filtros y la última exportación.
 
 ## Clasificación del archivo actual (01/10/2026 – 22/10/2026*, corte 10:09)
 
@@ -179,7 +204,8 @@ Sobre la conversación de 0 s: en `coocique_central`, las 43 salientes conectada
 | Elemento | Valor |
 |---|---|
 | Espaciado | Escala Fibonacci exacta: 8, 13, 21, 34, 55 y 89 px. Huecos y padding de 21 px en escritorio y tablet, 13 px en móvil. |
-| Tarjetas KPI principales (escritorio) | 283 px frente a 175 px de las secundarias: razón 1,618. Valores a 34 px frente a 21 px (razón 1,619). |
+| Tarjetas KPI principales (escritorio) | 283 px frente a 175 px de las secundarias: razón 1,618. Valores a 34 px frente a 21 px (razón 1,619). En General, las principales («Entrantes ofrecidas» e «Intentos salientes») ocupan las posiciones 1 y 4 del nuevo orden y conservan ese ancho. |
+| Hallazgos | 4 columnas en escritorio, 2 en tablet y 1 en móvil, con huecos de 21 px (13 px en móvil) |
 | Área de los gráficos | Relación ancho/alto de 1,62 (rectángulo áureo). El gráfico a ancho completo de Cobros usa 3φ = 4,85, lo que da una altura aproximadamente igual a la de las demás, porque no descuenta los huecos. |
 | Logo | 34 px de alto: el círculo naranja (X) mide unos 9,6 px y el espacio libre aplicado es de 13 px en los cuatro lados. En móvil el logo mide 21 px (X ≈ 5,9 px) con 13 px de margen. |
 | Encabezado y metodología | Columnas en proporción 1,618 : 1 |
@@ -200,11 +226,12 @@ Sobre la conversación de 0 s: en `coocique_central`, las 43 salientes conectada
 | Naranja `#F8AF45` | Abandonos y puntos de alerta. Nunca se usa para texto. |
 | Verde `#57E68C` | Solo líneas de % conexión y de conversación por agente. Es `#45F887` con la saturación HSL al 80 % (S 92,7 % → 74,2 %). |
 | Paleta secundaria | Muestreada del manual, para las series de apoyo |
+| Ventas, «Por fecha» | Usa la paleta del gráfico «Resultados de las conectadas por tipificación agrupada»: conectadas `#244092`, abandono del marcador `#356D9F`, no conectadas `#8F97BB`, abandono manual `#5EBEB2`. La línea de % conexión sigue en verde por la regla de marca. |
 | Mapa de calor | Escala de blanco a naranja |
 
 ## Controles de calidad ejecutados
 
-**`node scripts/qa-check.mjs` (28 controles, todos superados con el archivo actual)**
+**`node scripts/qa-check.mjs` (37 controles, todos superados con el archivo actual)**
 
 - Pruebas unitarias de:
   - parseo de duraciones, fechas y teléfonos;
@@ -217,9 +244,27 @@ Sobre la conversación de 0 s: en `coocique_central`, las 43 salientes conectada
 - Consistencia entre pestañas.
 - Embudos con etapas anidadas.
 
+- Nivel de servicio vigente (100 %) y el indicador ≤ 20 s conservado aparte.
+- Integridad de registros: incluidos + excluidos = cargados, y los filtros no alteran los datos.
+- Hallazgos: un máximo de 4 por vista, cada uno con dato e implicación; los de Cobros, sin tipificaciones.
+
 Con una campaña sin mapear, el script falla como corresponde.
 
-**Pruebas en navegador (Chromium sin interfaz, Playwright; 42 de 42 superadas)**
+**Pruebas en navegador, versión con Metodologías y hallazgos (Chromium sin interfaz, Playwright; 37 de 37 superadas)**
+
+| Área | Qué se verificó |
+|---|---|
+| Pestañas y botones | Cinco pestañas en orden. «Cargar Excel» y «Exportar dataset anonimizado» existen una sola vez y solo en Metodologías; carga con ratón y teclado. Bullets superiores eliminados. |
+| General | Orden de tarjetas y anchos (283/175/175/283/175/175 px) |
+| Nivel de servicio | 100 % en General; SAC conserva 38,7 % en «Atendidas en ≤ 20 s / ofrecidas»; documentado en Metodologías |
+| Hallazgos | 4 por vista, debajo de todos los gráficos; cambian con los filtros; aviso sin hallazgos cuando el volumen no alcanza; Crédito con datos sintéticos |
+| Ventas | Colores de «Por fecha» incluidos en la paleta de tipificación |
+| Preservación | 8.149 registros conservados al filtrar, exportar y tras cargas vacías, incompatibles o no Excel; exportación con las campañas «No tomar en cuenta»; exportación del integrado idéntica al original |
+| General | Sin errores de JavaScript; apertura con `file://` |
+
+Revisión de diseño en las cinco pestañas a 1440, 1024 y 390 px: cero solapes, sin textos recortados y sin desplazamiento horizontal.
+
+**Pruebas en navegador de la versión anterior (42 de 42 superadas; los filtros y la carga siguen cubiertos por la batería nueva)**
 
 | Área | Qué se verificó |
 |---|---|

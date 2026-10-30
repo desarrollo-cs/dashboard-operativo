@@ -193,15 +193,16 @@
   function outboundStatus(rows, labels, opts) {
     opts = opts || {};
     if (!rows.some(function (r) { return r.intentos; })) return empty();
+    var pal = opts.palette || { con: C.sky, abMarc: C.orange, abOtro: '#F2C98D', noCon: C.notConnected, sinEstado: '#5C5C5C' };
     var series = [
-      bar('Conectadas', rows.map(function (r) { return r.con; }), C.sky, 's'),
-      bar('Abandono marcador', rows.map(function (r) { return r.abMarc; }), C.orange, 's')
+      bar('Conectadas', rows.map(function (r) { return r.con; }), pal.con, 's'),
+      bar('Abandono marcador', rows.map(function (r) { return r.abMarc; }), pal.abMarc, 's')
     ];
     if (rows.some(function (r) { return r.abOtro; })) {
-      series.push(bar('Abandono manual', rows.map(function (r) { return r.abOtro; }), '#F2C98D', 's'));
+      series.push(bar('Abandono manual', rows.map(function (r) { return r.abOtro; }), pal.abOtro, 's'));
     }
-    series.push(bar('No conectadas', rows.map(function (r) { return r.noCon; }), C.notConnected, 's'));
-    if (rows.some(function (r) { return r.sinEstado; })) series.push(bar('Sin estado', rows.map(function (r) { return r.sinEstado; }), '#5C5C5C', 's'));
+    series.push(bar('No conectadas', rows.map(function (r) { return r.noCon; }), pal.noCon, 's'));
+    if (rows.some(function (r) { return r.sinEstado; })) series.push(bar('Sin estado', rows.map(function (r) { return r.sinEstado; }), pal.sinEstado, 's'));
     if (opts.withPct !== false) series.push(pctLine('% conexión', rows.map(function (r) { return r.pctCon == null ? null : +r.pctCon.toFixed(1); }), C.green));
     return base({
       xAxis: catAxis(labels, opts.rotate, opts.wrap),
@@ -230,12 +231,17 @@
     });
   }
 
+  // Paleta de «Resultados de las conectadas por tipificación agrupada» (Ventas)
+  var SALES_GROUP_COLORS = { 'Baja por riesgo': '#244092', 'Baja por desinterés': '#356D9F', 'Sin contacto efectivo': '#8F97BB',
+    'Seguimiento': '#5EBEB2', 'Otras tipificaciones (sin agrupar)': '#BCBCBC', 'Sin tipificación': '#E6E8F0' };
+  // Asignación al gráfico «Por fecha» de Ventas: mismos códigos, en el orden de la paleta
+  var SALES_STATUS_PALETTE = { con: '#244092', abMarc: '#356D9F', noCon: '#8F97BB', abOtro: '#5EBEB2', sinEstado: '#BCBCBC' };
+
   function salesGroups(groups) {
     var names = CONFIG.salesGroups.order.filter(function (g) { return g in groups; });
     var total = names.reduce(function (s, g) { return s + groups[g]; }, 0);
     if (!total) return empty();
-    var colors = { 'Baja por riesgo': '#244092', 'Baja por desinterés': '#356D9F', 'Sin contacto efectivo': '#8F97BB',
-      'Seguimiento': '#5EBEB2', 'Otras tipificaciones (sin agrupar)': '#BCBCBC', 'Sin tipificación': '#E6E8F0' };
+    var colors = SALES_GROUP_COLORS;
     return base({
       grid: { left: 8, right: 55, top: 34, bottom: 21, containLabel: true },
       tooltip: { trigger: 'item', confine: true, backgroundColor: '#FFFFFF', borderColor: C.grid, textStyle: { color: C.navy, fontFamily: FONT, fontSize: 13 },
@@ -342,6 +348,7 @@
 
   root.CTCharts = {
     F: F, setPartialDays: setPartialDays, dayLabel: dayLabel, hourLabel: hourLabel, empty: empty,
+    SALES_GROUP_COLORS: SALES_GROUP_COLORS, SALES_STATUS_PALETTE: SALES_STATUS_PALETTE,
     funnel: funnel, inboundSeries: inboundSeries, heatmap: heatmap, waitBuckets: waitBuckets, agentsInbound: agentsInbound,
     outboundStatus: outboundStatus, outboundAgents: outboundAgents, salesGroups: salesGroups, modeSeries: modeSeries,
     agentsByMode: agentsByMode, deptVolume: deptVolume, deptByDay: deptByDay, hourVolume: hourVolume, deptRates: deptRates

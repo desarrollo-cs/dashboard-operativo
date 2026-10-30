@@ -304,7 +304,9 @@
       atendidas: aten.length, abandonadas: ab.length, abSistema: abSis.length, abCliente: abCli.length, abOtro: abOtro,
       sinEstado: sinEstado,
       pctAb: ratio(ab.length, ofr.length), pctAbSis: ratio(abSis.length, ofr.length), pctAbCli: ratio(abCli.length, ofr.length),
-      sl20: sl, ns: ratio(sl, ofr.length), atenSinEspera: waitAten.invalid,
+      sl20: sl, pctSl20: ratio(sl, ofr.length), atenSinEspera: waitAten.invalid,
+      // Nivel de servicio según definición vigente: atendidas / total de atendidas × 100 (100 % si hay atendidas)
+      ns: ratio(aten.length, aten.length),
       wait: { n: waitAten.n, mean: mean(waitAten.values), p90: percentile(waitAten.values, 0.9), excluded: waitAten.excluded, invalid: waitAten.invalid },
       talk: { n: talk.n, mean: talk.n ? mean(talk.values) / 60 : null, median: talk.n ? percentile(talk.values, 0.5) / 60 : null,
         excluded: talk.excluded, invalid: talk.invalid, zeros: talk.zeros },
@@ -404,7 +406,7 @@
       var ib = inbound(e, { days: [], hours: [] });
       var ob = outboundBlock(s);
       return { dept: d, E: e.length, S: s.length, total: recs.filter(function (r) { return r.dept === d; }).length,
-        ofrecidas: ib.ofrecidas, pctAb: ib.pctAb, intentos: ob.intentos, pctCon: ob.pctCon };
+        ofrecidas: ib.ofrecidas, abandonadas: ib.abandonadas, pctAb: ib.pctAb, con: ob.con, intentos: ob.intentos, pctCon: ob.pctCon };
     });
     var gDay = groupBy(recs, function (r) { return r.day; });
     var dayDept = ax.days.map(function (d) {

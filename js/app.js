@@ -1,15 +1,15 @@
 /* Interfaz del dashboard: carga de datos, filtros combinables, pestañas, KPI, gráficos y metodología. */
 (function () {
   'use strict';
-  var CONFIG = window.CTConfig, P = window.CTParser, M = window.CTMetrics, CH = window.CTCharts, F = CH.F;
+  var CONFIG = window.CTConfig, P = window.CTParser, M = window.CTMetrics, CH = window.CTCharts, FN = window.CTFindings, F = CH.F;
   var $ = function (id) { return document.getElementById(id); };
 
   var state = {
     dataset: null, model: null, recs: [], activeTab: 'general', creditView: 'SAC',
     filters: { depts: null, campaigns: null, dateFrom: '', dateTo: '', month: '', monthFrom: '', monthTo: '' },
-    charts: {}, dirty: { general: true, sac: true, ventas: true, cobros: true }, sourceKind: ''
+    charts: {}, dirty: { general: true, sac: true, ventas: true, cobros: true, metodologias: true }, sourceKind: ''
   };
-  var TABS = ['general', 'sac', 'ventas', 'cobros'];
+  var TABS = ['general', 'sac', 'ventas', 'cobros', 'metodologias'];
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function fmtDate(d) { return d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4) : ''; }
@@ -27,21 +27,21 @@
 
   function loadDefault() {
     if (location.protocol === 'file:') {
-      setStatus('Abierto como archivo local: el navegador bloquea la lectura de data/dataset.json. Carga el Excel con el botón o ejecuta un servidor local (ver README).', true);
-      showEmptyPanels('Carga el Excel de inConcert para ver el dashboard.');
+      setStatus('Abierto como archivo local: el navegador bloquea la lectura de data/dataset.json. Carga el Excel con el botón «Cargar Excel» o ejecuta un servidor local (ver README).', true);
+      showEmptyPanels('Carga el Excel desde la pestaña «Metodologías» para ver el dashboard.');
       return;
     }
     fetch(CONFIG.defaultDatasetPath, { cache: 'no-cache' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (json) { setDataset(P.fromCompact(json), 'integrado'); })
       .catch(function (e) {
-        setStatus('No se encontró el dataset integrado (' + e.message + '). Carga el Excel de inConcert con el botón.', true);
-        showEmptyPanels('Carga el Excel de inConcert para ver el dashboard.');
+        setStatus('No se encontró el dataset integrado (' + e.message + '). Carga el Excel con el botón «Cargar Excel».', true);
+        showEmptyPanels('Carga el Excel desde la pestaña «Metodologías» para ver el dashboard.');
       });
   }
 
   function showEmptyPanels(msg) {
-    TABS.forEach(function (t) { $('panel-' + t).innerHTML = '<p class="loading">' + esc(msg) + '</p>'; });
+    TABS.forEach(function (t) { var el = t === 'metodologias' ? $('metodoBody') : $('panel-' + t); el.innerHTML = '<p class="loading">' + esc(msg) + '</p>'; });
     $('periodLabel').textContent = '| Período: sin datos cargados';
     $('sourceLabel').textContent = 'Sin datos cargados.';
   }
@@ -49,10 +49,11 @@
   function onFile(ev) {
     var file = ev.target.files && ev.target.files[0];
     if (!file) return;
-    if (!/\.(xlsx|xlsm|xls)$/i.test(file.name)) { setStatus('Formato no admitido: «' + file.name + '». Usa el .xlsx exportado de inConcert.', true); return; }
+    var keep = state.dataset ? ' Se conservan los datos cargados previamente.' : '';
+    if (!/\.(xlsx|xlsm|xls)$/i.test(file.name)) { setStatus('Formato no admitido: «' + file.name + '». Usa el .xlsx exportado de inConcert.' + keep, true); ev.target.value = ''; return; }
     setStatus('Procesando «' + file.name + '» en este navegador…');
     var reader = new FileReader();
-    reader.onerror = function () { setStatus('No se pudo leer el archivo.', true); };
+    reader.onerror = function () { setStatus('No se pudo leer el archivo.' + keep, true); };
     reader.onload = function () {
       try {
         var ds = P.parseWorkbook(window.XLSX, new Uint8Array(reader.result), file.name);
@@ -60,7 +61,7 @@
         setDataset(ds, 'local');
         setStatus('Archivo cargado: ' + file.name + ' (' + F.int(ds.records.length) + ' registros). Los datos no salieron de este navegador.');
       } catch (e) {
-        setStatus('Error de formato: ' + e.message, true);
+        setStatus('Error de formato: ' + e.message + keep, true);
       }
       ev.target.value = '';
     };
@@ -80,15 +81,17 @@
       });
     }
     var src = state.dataset;
-    var p = src.meta.anonymized ? Promise.resolve(null) : P.toCompact(src, hash);
+    // Si los datos ya están anonimizados, se conservan los hashes existentes (sin re-hash ni eliminaciones).
+    var p = P.toCompact(src, src.meta.anonymized ? function (x) { return Promise.resolve(x); } : hash);
     p.then(function (compact) {
-      if (!compact) { setStatus('Los datos actuales ya provienen del dataset anonimizado; carga un Excel para generar uno nuevo.', true); return; }
+      if (compact.rows.length !== src.records.length) throw new Error('el número de registros exportados no coincide con los cargados');
       var blob = new Blob([JSON.stringify(compact)], { type: 'application/json' });
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob); a.download = 'dataset.json';
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-      setStatus('dataset.json descargado. Reemplaza data/dataset.json en el repositorio y publica (ver README).');
+      setStatus('dataset.json descargado con ' + F.int(compact.rows.length) + ' registros (todos los cargados, incluidos los excluidos de los cálculos). Reemplaza data/dataset.json en el repositorio y publica (ver README).');
+      state.lastExport = compact.rows.length;
     }).catch(function (e) { setStatus('No se pudo exportar: ' + e.message, true); });
   }
 
@@ -97,7 +100,7 @@
     state.sourceKind = kind;
     state.model = M.prepare(ds);
     CH.setPartialDays(state.model.partial);
-    $('btnExport').disabled = !!ds.meta.anonymized;
+    $('btnExport').disabled = false;
     buildFilterControls();
     resetFilters();
   }
@@ -195,6 +198,8 @@
     });
     $('btnReset').addEventListener('click', resetFilters);
     $('fileInput').addEventListener('change', onFile);
+    var upl = document.querySelector('label[for="fileInput"]');
+    upl.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fileInput').click(); } });
     $('btnExport').addEventListener('click', exportDataset);
   }
 
@@ -223,6 +228,7 @@
       t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1;
     });
     TABS.forEach(function (t) { $('panel-' + t).hidden = t !== tab; });
+    $('controls').hidden = tab === 'metodologias';
     if (updateHash && history.replaceState) history.replaceState(null, '', '#' + tab);
     if (state.model && state.dirty[tab]) renderTab(tab);
     else resizeCharts(tab);
@@ -233,7 +239,6 @@
     if (!state.model) return;
     state.recs = M.applyFilters(state.model, state.filters);
     renderHeader();
-    renderAlerts();
     TABS.forEach(function (t) { state.dirty[t] = true; });
     renderTab(state.activeTab);
   }
@@ -277,9 +282,6 @@
     return items;
   }
 
-  function renderAlerts() {
-    $('alerts').innerHTML = alertItems().map(function (t) { return '<li><span class="dot" aria-hidden="true"></span><span>' + esc(t) + '</span></li>'; }).join('');
-  }
 
   function disposeCharts(tab) {
     (state.charts[tab] || []).forEach(function (c) { c.ro && c.ro.disconnect(); c.inst.dispose(); });
@@ -288,6 +290,7 @@
   function resizeCharts(tab) { (state.charts[tab] || []).forEach(function (c) { c.inst.resize(); }); }
 
   function renderTab(tab) {
+    if (tab === 'metodologias') { $('metodoBody').innerHTML = renderMetodologias(); state.dirty[tab] = false; return; }
     var panel = $('panel-' + tab);
     disposeCharts(tab);
     var r = { general: renderGeneral, sac: renderSAC, ventas: renderVentas, cobros: renderCobros }[tab];
@@ -354,6 +357,20 @@
     return parts.join(' · ');
   }
 
+  function findingsBlock(list, area) {
+    var h = '<section class="findings" aria-label="Hallazgos operativos ' + esc(area) + '"><h3 class="findings__title">Hallazgos operativos</h3>';
+    if (!list.length) {
+      return h + '<p class="findings__note">La selección actual no alcanza el volumen mínimo (' + CONFIG.findingsMinN +
+        ' llamadas por franja, día o agente) para sustentar hallazgos. Amplía los filtros.</p></section>';
+    }
+    h += '<div class="findings__grid">' + list.map(function (x) {
+      return '<article class="finding"><h4>' + esc(x.title) + '</h4><p class="finding__evidence"><b>Dato:</b> ' + esc(x.evidence) +
+        '</p><p class="finding__impl"><b>Implicación:</b> ' + esc(x.implication) + '</p><p class="finding__basis">Base: ' + esc(x.basis) + '</p></article>';
+    }).join('') + '</div>';
+    if (list.length < 4) h += '<p class="findings__note">Solo ' + list.length + ' hallazgo(s) tienen sustento suficiente con la selección actual; no se completan con datos no disponibles.</p>';
+    return h + '</section>';
+  }
+
   var COMMON_RULES = [
     'Clasificación por la tabla «Campaña → Departamento» del propio Excel; cada registro recibe un único departamento.',
     'Campañas marcadas «No tomar en cuenta» se excluyen por completo antes de cualquier cálculo.',
@@ -368,12 +385,13 @@
     var g = M.computeGeneral(recs), qa = state.model.qa, charts = [];
     var credit = (qa.byDept['Crédito'] || {}).total;
     var html = head('i-general', 'Vista general', 'Universo: todos los registros clasificados en SAC, Ventas, Cobros y Crédito según los filtros. ' + esc(filtersSummary()));
-    html += '<div class="kpis">' +
+    // Orden solicitado; cada tarjeta conserva su tamaño (las principales siguen siendo φ veces más anchas)
+    html += '<div class="kpis kpis--general">' +
       kpi('Entrantes ofrecidas', F.int(g.inb.ofrecidas), join(F.int(g.entrantes) + ' entrantes', F.int(g.inb.sinCola) + ' sin ingreso a cola'), { primary: true }) +
+      kpi('% abandono entrante', F.pct(g.inb.pctAb), F.int(g.inb.abandonadas) + ' abandonadas / ' + F.int(g.inb.ofrecidas) + ' ofrecidas') +
+      kpi('Nivel de servicio entrante', F.pct(g.inb.ns), F.int(g.inb.atendidas) + ' atendidas / ' + F.int(g.inb.atendidas) + ' atendidas (fórmula vigente; ver Metodologías)') +
       kpi('Intentos salientes', F.int(g.out.intentos), join('Manual ' + b(F.int(g.outModes.Manual)), 'Marcador ' + b(F.int(g.outModes['Marcación'])),
         g.outModes.otro ? 'Sin modo ' + F.int(g.outModes.otro) : ''), { primary: true }) +
-      kpi('% abandono entrante', F.pct(g.inb.pctAb), F.int(g.inb.abandonadas) + ' abandonadas / ' + F.int(g.inb.ofrecidas) + ' ofrecidas') +
-      kpi('Nivel de servicio entrante (≤' + CONFIG.slThresholdSec + ' s)', F.pct(g.inb.ns), F.int(g.inb.sl20) + ' atendidas en ≤' + CONFIG.slThresholdSec + ' s / ' + F.int(g.inb.ofrecidas) + ' ofrecidas') +
       kpi('% conexión saliente', F.pct(g.out.pctCon), F.int(g.out.con) + ' conectadas / ' + F.int(g.out.intentos) + ' intentos') +
       kpi('Registros analizados', F.int(g.total), join(F.int(g.entrantes) + ' entrantes', F.int(g.salientes) + ' salientes'),
         { alert: credit ? '' : 'Crédito sin campañas asignadas en la tabla del Excel' }) +
@@ -387,6 +405,7 @@
       chartCard(charts, 'Distribución por hora: entrantes ofrecidas e intentos salientes', 'Llamadas por hora de inicio', CH.hourVolume(g.hour)) +
       chartCard(charts, 'Indicadores por departamento: % abandono entrante y % conexión saliente', 'Cada porcentaje usa su propio universo; no se suman', CH.deptRates(g.perDept)) +
       '</div>';
+    html += findingsBlock(FN.general(recs, g), 'consolidados');
     html += method('Metodología, definiciones y controles de calidad', [
       sec('Universo y definiciones', list([
         '<b>Registro</b>: una fila de la hoja de detalle de inConcert (una llamada o intento).',
@@ -396,7 +415,7 @@
         '<b>Modo de marcación</b>: columna «Tipo de Llamada saliente» (Manual / Marcación).'
       ]) + sec('Fórmulas', table(['Indicador', 'Fórmula'], [
         ['% abandono entrante', 'abandonadas / ofrecidas × 100'],
-        ['Nivel de servicio', 'atendidas con «Tiempo Esp.» ≤ ' + CONFIG.slThresholdSec + ' s / ofrecidas × 100'],
+        ['Nivel de servicio', 'atendidas / total de atendidas × 100 (da 100 % siempre que haya atendidas; ver Metodologías)'],
         ['% conexión saliente', 'conectadas / intentos × 100']
       ])) + sec('Reglas comunes', list(COMMON_RULES))),
       sec('Reconciliación con el Excel', qaTable()) + sec('Departamentos', deptTable())
@@ -465,7 +484,7 @@
     html += '<div class="kpis">' +
       kpi('Ofrecidas', F.int(v.ofrecidas), join(F.int(v.atendidas) + ' atendidas', F.int(v.abandonadas) + ' abandonadas', v.sinCola ? F.int(v.sinCola) + ' entrantes sin ingreso a cola' : ''), { primary: true }) +
       kpi('% abandono', F.pct(v.pctAb), abSub, { primary: true }) +
-      kpi('Atendidas en ≤' + CONFIG.slThresholdSec + ' s / ofrecidas', F.pct(v.ns), F.int(v.sl20) + ' de ' + F.int(v.ofrecidas) + ' ofrecidas') +
+      kpi('Atendidas en ≤' + CONFIG.slThresholdSec + ' s / ofrecidas', F.pct(v.pctSl20), F.int(v.sl20) + ' de ' + F.int(v.ofrecidas) + ' ofrecidas') +
       kpi('Espera promedio (atendidas)', F.sec(v.wait.mean), 'P90 ' + b(F.sec(v.wait.p90)) + ' · ' + F.int(v.wait.n) + ' esperas válidas',
         { alert: v.wait.excluded ? F.int(v.wait.excluded) + ' esperas > 2 h excluidas' : '' }) +
       kpi('Conversación promedio', F.min(v.talk.mean), 'Mediana ' + b(F.min(v.talk.median)) + ' · ' + F.int(v.talk.n) + ' válidas',
@@ -485,6 +504,7 @@
       chartCard(charts, 'Tramos de espera: atendidas vs. abandonadas', 'Segundos de «Tiempo Esp.»', CH.waitBuckets(v.buckets)) +
       chartCard(charts, 'Por agente: atendidas y conversación promedio', 'Último agente de la llamada atendida; conversación en minutos', CH.agentsInbound(ag)) +
       '</div>';
+    html += findingsBlock(FN.inbound(recs.filter(function (r) { return r.dept === dept && r.d === 'E'; }), v, dept), dept);
     html += method('Metodología, definiciones y controles (' + dept + ')', [
       sec('Universo', list([
         'Registros con departamento ' + dept + ' e «Inic.» = Ent.: ' + F.int(v.total) + '.',
@@ -495,7 +515,8 @@
       ])) + sec('Fórmulas', table(['Indicador', 'Fórmula', 'Campo'], [
         ['% abandono', 'abandonadas / ofrecidas × 100', 'Ab.'],
         ['% abandono cliente / sistema', 'abandonos de cada tipo / ofrecidas × 100', 'Ab., Finalizador'],
-        ['Nivel de servicio', 'atendidas con espera ≤ ' + CONFIG.slThresholdSec + ' s / ofrecidas × 100', 'Tiempo Esp.'],
+        ['Nivel de servicio', 'atendidas / total de atendidas × 100 (100 % si hay atendidas)', 'Aten.'],
+        ['Atendidas en ≤' + CONFIG.slThresholdSec + ' s / ofrecidas', 'atendidas con espera ≤ ' + CONFIG.slThresholdSec + ' s / ofrecidas × 100', 'Tiempo Esp.'],
         ['Espera promedio y P90', 'media y percentil 90 de esperas válidas de atendidas (s)', 'Tiempo Esp.'],
         ['Conversación promedio y mediana', 'media y mediana de duraciones válidas de atendidas (min)', 'Tiempo atención'],
         ['Transferencias', 'atendidas con «Tr.» = Si; exitosas: «Tr. Ok» = Si', 'Tr., Tr. Ok'],
@@ -534,12 +555,13 @@
     var agents = v.byAgent;
     html += '<div class="charts">' +
       chartCard(charts, 'Embudo: intentos → contestadas → con agente → tipificada → seguimiento', 'Etapas anidadas; % sobre intentos', CH.funnel(v.funnel)) +
-      chartCard(charts, 'Por fecha: conectadas, abandonos del marcador y no conectadas', join('Intentos; % conexión = conectadas / intentos', pn), CH.outboundStatus(v.byDay, days(v.ax))) +
+      chartCard(charts, 'Por fecha: conectadas, abandonos del marcador y no conectadas', join('Intentos; % conexión = conectadas / intentos', pn), CH.outboundStatus(v.byDay, days(v.ax), { palette: CH.SALES_STATUS_PALETTE })) +
       chartCard(charts, 'Resultados de las conectadas por tipificación agrupada', 'Conectadas (con agente) según «Disp. Abs.»', CH.salesGroups(v.groups)) +
       chartCard(charts, 'Por hora: resultado del intento y % conexión', 'Hora de inicio del intento', CH.outboundStatus(v.byHour, hours(v.ax))) +
       chartCard(charts, 'Por campaña: resultado del intento y % conexión', 'Intentos por campaña de Ventas', CH.outboundStatus(v.byCampaign, v.byCampaign.map(function (c) { return c.key; }), { wrap: v.byCampaign.length > 4 ? 55 : 89 })) +
       chartCard(charts, 'Por agente: resultado del intento y conversación promedio', 'Primer agente; conversación en minutos', CH.outboundAgents(agents)) +
       '</div>';
+    html += findingsBlock(FN.ventas(recs.filter(function (r) { return r.dept === 'Ventas' && r.d === 'S'; }), v), 'Ventas');
     var detailRows = Object.keys(v.groupDetail).sort(function (a, c) { return v.groupDetail[c].n - v.groupDetail[a].n; })
       .map(function (k) { return [esc(k), esc(v.groupDetail[k].group), F.int(v.groupDetail[k].n)]; });
     html += method('Metodología, definiciones y controles (Ventas)', [
@@ -597,6 +619,7 @@
       chartCard(charts, 'Top ' + CONFIG.topAgents + ' agentes por intentos, por modo de marcación', 'Primer agente del intento', CH.agentsByMode(c.topAgents)) +
       chartCard(charts, 'Línea entrante por fecha: atendidas, abandonadas y % abandono', join('Entrantes ofrecidas de Cobros; % sobre ofrecidas', pn), CH.inboundSeries(inb.byDay, days(c.ax)), true) +
       '</div>';
+    html += findingsBlock(FN.cobros(recs.filter(function (r) { return r.dept === 'Cobros' && r.d === 'S'; }), c), 'Cobros');
     html += method('Metodología, definiciones y controles (Cobros)', [
       sec('Universo y definiciones', list([
         'Salientes de Cobros por modo («Tipo de Llamada saliente»): manual ' + F.int(man.intentos) + ', marcador ' + F.int(mar.intentos) + (c.modes.otro.intentos ? ', sin modo ' + F.int(c.modes.otro.intentos) : '') + '. Cada intento pertenece a un único modo.',
@@ -610,7 +633,8 @@
         ['Intentos por número', 'intentos salientes / números únicos («Dir.» normalizado)'],
         ['Conversación', 'media y mediana de «Tiempo Conc.» válidos de conectadas (min)'],
         ['% abandono línea entrante', 'abandonadas / ofrecidas × 100'],
-        ['Nivel de servicio (embudo entrante)', 'atendidas con «Tiempo Esp.» ≤ ' + CONFIG.slThresholdSec + ' s / ofrecidas']
+        ['Atendidas en ≤' + CONFIG.slThresholdSec + ' s (embudo entrante)', 'atendidas con «Tiempo Esp.» ≤ ' + CONFIG.slThresholdSec + ' s / ofrecidas'],
+        ['Nivel de servicio', 'atendidas / total de atendidas × 100 (100 % si hay atendidas)']
       ])),
       sec('Exclusiones y supuestos', list([
         'Conversaciones > 2 h excluidas: ' + F.int(c.talk.excluded) + '; con 0 s no medidas: ' + F.int(c.talk.zeros) + '; nulas: ' + F.int(c.talk.invalid) + '.',
@@ -619,6 +643,211 @@
       ].concat(COMMON_RULES)))
     ]);
     return { html: html, charts: charts };
+  }
+
+  // ---------------- Metodologías ----------------
+  function integrityTable() {
+    var qa = state.model.qa, ds = state.dataset, st = qa.parserStats || {};
+    function ok(cond, txt) { return '<span class="' + (cond ? 'qa-ok' : 'qa-warn') + '">' + txt + '</span>'; }
+    var read = st.rowsRead != null ? st.rowsRead : ds.records.length;
+    var kept = ds.records.length;
+    var rows = [
+      ['Filas con datos en la hoja de detalle', F.int(read), ok(true, 'Hoja «' + esc(state.model.meta.detailSheet || '—') + '»' + (st.blankRows ? '; ' + F.int(st.blankRows) + ' filas totalmente vacías sin contenido' : ''))],
+      ['Registros conservados tras la carga', F.int(kept), ok(kept === read, kept === read ? 'Igual a las filas leídas: no se eliminó ningún registro' : 'Diferencia con las filas leídas')],
+      ['Registros en el dataset exportable', F.int(kept), ok(true, 'La exportación incluye todos los registros conservados')],
+      ['Excluidos de los cálculos («No tomar en cuenta»)', F.int(qa.excludedTotal), ok(true, 'Se conservan en los datos; ' + (Object.keys(qa.excludedByCampaign).map(function (c) { return esc(c) + ': ' + qa.excludedByCampaign[c]; }).join(', ') || 'ninguno'))],
+      ['Incluidos en los cálculos operativos', F.int(qa.included), ok(qa.included + qa.excludedTotal === kept, 'Incluidos + excluidos = conservados')],
+      ['De ellos, sin departamento en la tabla', F.int(qa.unclassifiedTotal), ok(!qa.unclassifiedTotal, qa.unclassifiedTotal ? 'Visibles como «Sin clasificar»: ' + esc(qa.unmappedCampaigns.join(', ')) : 'Ninguno')],
+      ['Visibles con los filtros actuales', F.int(state.recs.length), ok(true, 'Los filtros solo cambian la vista; no modifican los datos almacenados')],
+      ['Duraciones > 2 h (espera / atención / conversación saliente)', F.int(qa.longDurations.we) + ' / ' + F.int(qa.longDurations.wa) + ' / ' + F.int(qa.longDurations.wc), ok(true, 'Registros conservados y contados; fuera solo de promedios y percentiles')],
+      ['Identificadores duplicados', F.int(qa.duplicateIds), ok(!qa.duplicateIds, 'Se conservan; no se deduplica')],
+      ['Registros sin fecha válida', F.int(qa.recordsWithoutDate), ok(!qa.recordsWithoutDate, 'Se conservan; quedan fuera de los filtros de fecha')],
+      ['Clasificadas + excluidas = total del archivo', F.int(qa.sumDept) + ' + ' + F.int(qa.excludedTotal), ok(qa.reconciled, qa.reconciled ? 'Reconcilia con ' + F.int(qa.totalFile) : 'No reconcilia')]
+    ];
+    if (state.lastExport != null) rows.push(['Registros en la última exportación', F.int(state.lastExport), ok(state.lastExport === kept, 'Comparado con los conservados')]);
+    return table(['Control', 'Valor', 'Resultado'], rows, [1]);
+  }
+
+  function campaignsOf(dept) {
+    var out = [];
+    state.model.mapping.forEach(function (v) { if (v.dept === dept) out.push(v.campaign); });
+    return out.length ? out.map(esc).join(', ') : 'ninguna';
+  }
+
+  function deptSection(icon, title, blocks) {
+    return '<section class="metodo-sec"><div class="metodo-sec__head"><span class="dept-icon" aria-hidden="true"><svg><use href="#' + icon + '"/></svg></span><h3>' + esc(title) + '</h3></div>' +
+      '<div class="method__body">' + '<div>' + blocks.left.join('') + '</div><div>' + blocks.right.join('') + '</div></div></section>';
+  }
+  function sub(title, body) { return '<section class="metodo-sub"><h4>' + esc(title) + '</h4>' + body + '</section>'; }
+
+  function renderMetodologias() {
+    var model = state.model, qa = model.qa;
+    var all = M.applyFilters(model, {});
+    var sac = M.computeInboundView(all, 'SAC', all), v = M.computeVentas(all, all), c = M.computeCobros(all, all);
+    var cr = M.computeInboundView(all, 'Crédito', all);
+    var sl = CONFIG.slThresholdSec, maxh = F.int(CONFIG.maxDurationSec);
+    var src = state.sourceKind === 'local' ? 'Excel cargado en este navegador' : 'dataset integrado (anonimizado)';
+    var html = '<p class="metodo-intro">Fuente: ' + esc(src) + ' «' + esc(model.meta.fileName || '—') + '». Las cifras de esta pestaña corresponden al archivo completo, sin filtros.</p>';
+
+    var notes = alertItems();
+    html += '<section class="metodo-sec"><div class="metodo-sec__head"><h3>Avisos de calidad de datos</h3></div>' +
+      (notes.length ? '<ul class="alerts">' + notes.map(function (t) { return '<li><span class="dot" aria-hidden="true"></span><span>' + esc(t) + '</span></li>'; }).join('') + '</ul>' : '<p>Sin avisos.</p>') + '</section>';
+
+    html += '<section class="metodo-sec"><div class="metodo-sec__head"><h3>Control de integridad de los registros</h3></div>' +
+      '<div class="method__body"><div>' + integrityTable() + '</div><div>' + sub('Preservación de los datos', list([
+        'Ningún registro se borra, descarta ni sobrescribe durante la carga, el filtrado o la exportación.',
+        'Las campañas «No tomar en cuenta» permanecen en los datos y en la exportación; solo se excluyen de los cálculos operativos.',
+        'Nulos, duplicados, inconsistencias y duraciones > 2 h se conservan; se aplican las reglas de cálculo sin eliminar registros.',
+        'Si una carga falla (archivo vacío, inválido o incompatible), se conserva el último conjunto de datos válido y se muestra el motivo.',
+        'Si una métrica no puede calcularse, se muestra «—» y se informa; los registros se conservan.',
+        'Las filas totalmente vacías del Excel no contienen datos y no generan registros; se informan en el control.'
+      ])) + sub('Nivel de servicio: definición vigente', '<p>Nivel de servicio = atendidas / total de atendidas × 100. Por construcción, numerador y denominador son iguales: el indicador da <b>100 %</b> siempre que haya al menos una atendida y «—» si no hay ninguna. No mide la rapidez de atención ni el umbral de ' + sl +
+        ' s. La proporción de atendidas en ≤' + sl + ' s sobre las ofrecidas se conserva como indicador separado («Atendidas en ≤' + sl + ' s / ofrecidas») en SAC, en Crédito y en el embudo entrante de Cobros.</p>') + '</div></div></section>';
+
+    html += deptSection('i-sac', 'SAC', {
+      left: [
+        sub('Objetivo y universo de datos', '<p>Medir la atención de llamadas entrantes de SAC: volumen ofrecido, abandono del cliente y del sistema, tiempos de espera y de conversación, transferencias y carga por agente.</p>' + list([
+          'Campañas asignadas a SAC en la tabla del Excel: ' + campaignsOf('SAC') + '.',
+          'Universo: registros SAC con «Inic.» = Ent. → ' + F.int(sac.total) + '; ofrecidas («Buscó agente» = Si): ' + F.int(sac.ofrecidas) + '; sin ingreso a cola: ' + F.int(sac.sinCola) + '.',
+          'Las salientes de campañas SAC (' + F.int((qa.byDept.SAC || {}).S || 0) + ') solo se muestran en General.'
+        ])),
+        sub('Indicadores y fórmulas', table(['Indicador', 'Fórmula', 'Campo'], [
+          ['Ofrecidas', 'entrantes con «Buscó agente» = Si', 'Buscó agente'],
+          ['% abandono', 'abandonadas / ofrecidas × 100', 'Ab.'],
+          ['% abandono cliente / sistema', 'abandonos de cada tipo / ofrecidas × 100', 'Ab., Finalizador'],
+          ['Nivel de servicio', 'atendidas / total de atendidas × 100', 'Aten.'],
+          ['Atendidas en ≤' + sl + ' s / ofrecidas', 'atendidas con espera ≤ ' + sl + ' s / ofrecidas × 100', 'Tiempo Esp.'],
+          ['Espera promedio y P90', 'media y percentil 90 (interpolación lineal) de esperas válidas de atendidas, en s', 'Tiempo Esp.'],
+          ['Conversación promedio y mediana', 'sobre duraciones válidas de atendidas, en min', 'Tiempo atención'],
+          ['Transferencias', 'atendidas con «Tr.» = Si; completadas: «Tr. Ok» = Si', 'Tr., Tr. Ok'],
+          ['Mapa de calor', 'abandonadas / ofrecidas por día de semana y hora', 'Fecha de inicio']
+        ]))
+      ],
+      right: [
+        sub('Criterios de clasificación y agrupación', list([
+          'Atendida: ofrecida con «Aten.» = Si. Abandonada: ofrecida con «Ab.» = Si.',
+          'Abandono del sistema: finalizador «ACD timeout» (' + F.int(sac.abSistema) + '). Abandono del cliente: finalizador «Contacto» (' + F.int(sac.abCliente) + '). Otros finalizadores: sin determinar (' + F.int(sac.abOtro) + ').',
+          'Tramos de espera: 0–10, 11–20, 21–30, 31–60, 61–90 y >90 s.',
+          'Agente: «Último agente» de la llamada atendida.'
+        ])),
+        sub('Reglas de inclusión, exclusión y tratamiento', list([
+          'Esperas > 2 h excluidas de estadísticas: ' + F.int(sac.wait.excluded) + '; conversaciones > 2 h: ' + F.int(sac.talk.excluded) + '. Se cuentan en los volúmenes.',
+          'Conversaciones de 0 s se tratan como no medidas (' + F.int(sac.talk.zeros) + ').',
+          'Celdas del mapa de calor con menos de ' + CONFIG.heatmapMinCalls + ' ofrecidas muestran «—».'
+        ])),
+        sub('Supuestos y limitaciones', list([
+          'El nivel de servicio vigente es 100 % cuando hay atendidas (ver definición arriba).',
+          'Una atendida sin espera válida no cuenta dentro de «Atendidas en ≤' + sl + ' s».',
+          'La clasificación de abandonos depende del finalizador registrado por inConcert.'
+        ]))
+      ]
+    });
+
+    var grpRows = [];
+    Object.keys(CONFIG.salesGroups.exactRules).forEach(function (k) { grpRows.push([esc(k), esc(CONFIG.salesGroups.exactRules[k])]); });
+    CONFIG.salesGroups.prefixRules.forEach(function (r) { grpRows.push([esc(r.prefix) + '…', esc(r.group)]); });
+    grpRows.push(['Cualquier otra tipificación', 'Otras tipificaciones (sin agrupar)'], ['Sin «Disp. Abs.» ni «Disp.»', 'Sin tipificación']);
+    html += deptSection('i-ventas', 'Ventas', {
+      left: [
+        sub('Objetivo y universo de datos', '<p>Medir la gestión saliente de Ventas: intentos, contactabilidad, abandono del marcador, tipificación de las gestiones y resultado de las conectadas.</p>' + list([
+          'Campañas asignadas a Ventas: ' + campaignsOf('Ventas') + '.',
+          'Universo: registros Ventas con «Inic.» = Sal. → ' + F.int(v.base.intentos) + ' intentos (manual ' + F.int(v.modes.Manual.intentos) + ', marcador ' + F.int(v.modes['Marcación'].intentos) + ').',
+          'Las entrantes de campañas de Ventas (' + F.int((qa.byDept.Ventas || {}).E || 0) + ') solo se muestran en General.'
+        ])),
+        sub('Indicadores y fórmulas', table(['Indicador', 'Fórmula'], [
+          ['Intentos', 'registros salientes'],
+          ['Números gestionados únicos', 'valores distintos de «Dir.» normalizado'],
+          ['% conexión', 'conectadas / intentos × 100'],
+          ['% abandono del marcador', 'abandonos del marcador / (conectadas en marcador + abandonos del marcador) × 100'],
+          ['Gestión tipificada / intentos', 'registros con tipificación válida / intentos × 100'],
+          ['Intentos por número', 'intentos / números únicos'],
+          ['Conversación promedio y mediana', '«Tiempo Conc.» válido de conectadas, en min']
+        ]))
+      ],
+      right: [
+        sub('Criterios de clasificación y agrupación', list([
+          'Estados excluyentes: conectada («Aten.» = Si), abandono tras contestar («Ab.» = Si; del marcador si el modo es Marcación), no conectada («Canc.» = Si).',
+          'Contestadas = conectadas + abandonos tras contestar. Embudo anidado: intentos → contestadas → con agente → con agente y tipificada → seguimiento.',
+          'Tipificación válida: «Disp. Abs.» (o «Disp.») distinto de N/A o vacío.',
+          'Agrupación de tipificaciones de las conectadas (literal, sin asignar por similitud):'
+        ]) + table(['Tipificación', 'Grupo'], grpRows)),
+        sub('Reglas de inclusión, exclusión y tratamiento', list([
+          'Teléfonos: solo dígitos; números de 11 dígitos con prefijo 506 se reducen a 8.',
+          'Conversaciones > 2 h excluidas de estadísticas: ' + F.int(v.talk.excluded) + '; con 0 s no medidas: ' + F.int(v.talk.zeros) + '.'
+        ])),
+        sub('Supuestos y limitaciones', list([
+          'En coocique_central, las salientes conectadas registran «Tiempo Conc.» = 0; la conversación de Ventas se calcula con ' + F.int(v.talk.n) + ' conectadas con duración medida.',
+          'Registros tipificados sin conexión con agente: ' + F.int(v.tipNoCon) + ' (cuentan en «gestión tipificada», no en el embudo).',
+          'Agente: «Primer agente» del intento.'
+        ]))
+      ]
+    });
+
+    html += deptSection('i-cobros', 'Cobros', {
+      left: [
+        sub('Objetivo y universo de datos', '<p>Medir la gestión de Cobros en tres universos separados: salientes manuales, salientes por marcador y línea entrante. Esta área no presenta tipificaciones, resultados de contacto, contacto efectivo ni compromisos.</p>' + list([
+          'Campañas asignadas a Cobros: ' + campaignsOf('Cobros') + '.',
+          'Salientes: manual ' + F.int(c.modes.Manual.intentos) + ', marcador ' + F.int(c.modes['Marcación'].intentos) + (c.modes.otro.intentos ? ', sin modo ' + F.int(c.modes.otro.intentos) : '') + '. Entrantes: ' + F.int(c.inb.total) + ' (' + F.int(c.inb.ofrecidas) + ' ofrecidas).'
+        ])),
+        sub('Indicadores y fórmulas', table(['Indicador', 'Fórmula'], [
+          ['% conexión (total y por modo)', 'conectadas / intentos × 100 en cada universo'],
+          ['% abandono del marcador', 'abandonos del marcador / (conectadas en marcador + abandonos del marcador) × 100'],
+          ['Números únicos e intentos por número', 'valores distintos de «Dir.» normalizado; intentos / números únicos'],
+          ['Conversación promedio y mediana', '«Tiempo Conc.» válido de conectadas, en min'],
+          ['% abandono línea entrante', 'abandonadas / ofrecidas × 100'],
+          ['Nivel de servicio (línea entrante)', 'atendidas / total de atendidas × 100'],
+          ['Atendidas en ≤' + sl + ' s (embudo entrante)', 'atendidas con espera ≤ ' + sl + ' s / ofrecidas']
+        ]))
+      ],
+      right: [
+        sub('Criterios de clasificación y agrupación', list([
+          'Modo de marcación según «Tipo de Llamada saliente»; cada intento pertenece a un solo modo.',
+          'Contestadas: «Aten.» = Si o «Ab.» = Si. Con agente: «Aten.» = Si.',
+          'Top de agentes: ' + CONFIG.topAgents + ' agentes con más intentos («Primer agente»), apilados por modo.'
+        ])),
+        sub('Reglas de inclusión, exclusión y tratamiento', list([
+          'Los denominadores de salientes manuales, marcador y entrantes no se mezclan.',
+          'Conversaciones > 2 h excluidas de estadísticas: ' + F.int(c.talk.excluded) + '; con 0 s no medidas: ' + F.int(c.talk.zeros) + '.'
+        ])),
+        sub('Supuestos y limitaciones', list([
+          'Las diferencias entre modos no prueban una causa: las bases asignadas a cada modo pueden ser distintas.',
+          'El campo «Disp.» existe para Cobros, pero no se presenta por restricción de la vista.'
+        ]))
+      ]
+    });
+
+    var hasCr = cr.total > 0;
+    html += deptSection('i-credito', 'Crédito', {
+      left: [
+        sub('Objetivo y universo de datos', '<p>Aplicar a las llamadas entrantes de Crédito la misma estructura de SAC y mostrar sus salientes con % de conexión.</p>' + list([
+          'Campañas asignadas a Crédito: ' + campaignsOf('Crédito') + '.',
+          hasCr ? 'Universo: ' + F.int(cr.total) + ' entrantes (' + F.int(cr.ofrecidas) + ' ofrecidas) y ' + F.int((qa.byDept['Crédito'] || {}).S || 0) + ' salientes.'
+            : 'En el archivo cargado ninguna campaña está asignada a Crédito; sus indicadores no pueden calcularse. Las campañas con «credito» en el nombre están asignadas a Ventas por la tabla del Excel y no se reclasifican.'
+        ])),
+        sub('Indicadores y fórmulas', '<p>Los de SAC (ofrecidas, % abandono cliente/sistema, nivel de servicio, atendidas en ≤' + sl + ' s / ofrecidas, espera, conversación y mapa de calor). Sexta tarjeta: salientes de Crédito y su % de conexión (conectadas / intentos × 100), solo si ambos datos existen. Gráfico por hora: % abandono SAC como referencia con los mismos filtros.</p>')
+      ],
+      right: [
+        sub('Criterios, reglas y limitaciones', list([
+          'Se activa en la pestaña «Operativa SAC» (selector SAC / Crédito) cuando la tabla del Excel asigna campañas a Crédito.',
+          'Mismas reglas de tratamiento que SAC (duraciones > 2 h, 0 s, mapa de calor con «—» bajo ' + CONFIG.heatmapMinCalls + ' ofrecidas).',
+          'Los hallazgos de Crédito se presentan solo cuando hay volumen suficiente.'
+        ]))
+      ]
+    });
+
+    html += '<section class="metodo-sec"><div class="metodo-sec__head"><span class="dept-icon" aria-hidden="true"><svg><use href="#i-general"/></svg></span><h3>Reglas comunes y hallazgos</h3></div><div class="method__body"><div>' +
+      sub('Reglas comunes', list(COMMON_RULES.concat([
+        'Día parcial (*): el primer o último día del archivo cuyo primer/último registro difiere al menos ' + CONFIG.partialDayMarginMin + ' min de los demás días del mismo tipo (lunes a viernes, sábado o domingo).',
+        'Los filtros (departamento, campaña, fecha, mes y rango de meses) se combinan y solo cambian la vista.'
+      ]))) + '</div><div>' +
+      sub('Cómo se generan los hallazgos', list([
+        'Se calculan con los datos de la selección actual, por reglas fijas; no contienen cifras estimadas.',
+        'Cada vista evalúa una lista ordenada de candidatos (abandono por franja, tolerancia de espera, cortes por ACD timeout, carga por agente, transferencias, abandono del marcador, tipificación, conexión por hora, reintentos sin conexión, comparación de modos, conexión por agente) y muestra los cuatro primeros con sustento.',
+        'Una franja, día o agente necesita al menos ' + CONFIG.findingsMinN + ' llamadas; reintentos sin conexión: números con ' + CONFIG.findingsRetryMin + ' o más intentos y ninguna conectada.',
+        'Si no hay sustento suficiente, se muestran menos hallazgos y se indica el motivo.',
+        'General presenta hallazgos consolidados entre departamentos, distintos de los de cada área.'
+      ])) + '</div></div></section>';
+    return html;
   }
 
   // ---------------- arranque ----------------
