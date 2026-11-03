@@ -89,8 +89,15 @@ ok('Embudo Ventas: etapas anidadas', sub(v.funnel), JSON.stringify(v.funnel.map(
 ok('Embudos Cobros: contestadas ≤ intentos, con agente ≤ contestadas',
   ['Manual', 'Marcación'].every((m) => c.modes[m].contestadas <= c.modes[m].intentos && c.modes[m].con <= c.modes[m].contestadas));
 ok('Nivel de servicio ≤ atendidas ≤ ofrecidas', sac.sl20 <= sac.atendidas && sac.atendidas <= sac.ofrecidas);
-ok('Nivel de servicio = atendidas / atendidas (100 % con atendidas)', sac.atendidas ? sac.ns === 100 : sac.ns === null, String(sac.ns));
-ok('«Atendidas en ≤20 s / ofrecidas» se conserva aparte', Math.abs(sac.pctSl20 - sac.sl20 / sac.ofrecidas * 100) < 1e-9);
+ok('Nivel de servicio = atendidas ≤20 s / atendidas', Math.abs(sac.ns - sac.sl20 / sac.atendidas * 100) < 1e-9, sac.ns.toFixed(1) + ' %');
+const sl = M.serviceLevelByCampaign(recs);
+const sumRows = (f) => sl.depts.reduce((a, d) => a + d.rows.reduce((b, r) => b + r[f], 0), 0);
+ok('NS por campaña: suma de atendidas por campaña = total entrante', sumRows('atendidas') === g.inb.atendidas && sl.total.atendidas === g.inb.atendidas);
+ok('NS por campaña: suma de atendidas ≤20 s = total', sumRows('sl20') === g.inb.sl20 && sl.total.sl20 === g.inb.sl20);
+ok('NS total = General (conteos sumados, no promedio de %)', Math.abs(sl.total.ns - g.inb.ns) < 1e-9, sl.total.ns.toFixed(1) + ' %');
+ok('NS de cada departamento = vista operativa', Math.abs(sl.depts.find((d) => d.dept === 'SAC').ns - sac.ns) < 1e-9 &&
+  Math.abs(sl.depts.find((d) => d.dept === 'Cobros').ns - c.inb.ns) < 1e-9);
+ok('NS: campaña sin atendidas → nulo (no 0 %)', sl.depts.every((d) => d.rows.every((r) => r.atendidas ? r.ns != null : r.ns === null)));
 ok('Integridad: incluidos + excluidos = registros cargados', qa.included + qa.excludedTotal === ds.records.length);
 ok('Filtrar no altera los registros', M.applyFilters(model, { dateFrom: '2099-01-01' }).length === 0 && model.records.length === qa.included);
 const fd = {

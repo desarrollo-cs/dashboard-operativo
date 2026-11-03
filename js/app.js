@@ -327,10 +327,6 @@
     return '<div class="panel-head"><span class="dept-icon" aria-hidden="true"><svg><use href="#' + icon + '"/></svg></span><h2>' + esc(title) + '</h2>' +
       (extra || '') + '<p class="universe">' + universe + '</p></div>';
   }
-  function method(title, sections) {
-    return '<details class="method"><summary>' + esc(title) + '</summary><div class="method__body">' + sections.join('') + '</div></details>';
-  }
-  function sec(title, body) { return '<section><h3>' + esc(title) + '</h3>' + body + '</section>'; }
   function list(items) { return '<ul>' + items.map(function (i) { return '<li>' + i + '</li>'; }).join('') + '</ul>'; }
   function table(headers, rows, numCols) {
     numCols = numCols || [];
@@ -355,6 +351,28 @@
     if (f.month) parts.push('Mes: ' + monthName(f.month));
     if (f.monthFrom || f.monthTo) parts.push('Meses: ' + (f.monthFrom ? monthName(f.monthFrom) : 'inicio') + ' a ' + (f.monthTo ? monthName(f.monthTo) : 'fin'));
     return parts.join(' · ');
+  }
+
+  function nsTable(sl) {
+    var thr = CONFIG.slThresholdSec, low = CONFIG.findingsMinN;
+    var h = '<section class="ns-table" aria-label="Nivel de servicio por campaña"><h3 class="findings__title">Nivel de servicio por campaña</h3>' +
+      '<p class="findings__note ns-table__lead">Atendidas con espera ≤' + thr + ' s / total de atendidas × 100. Los totales suman conteos de las campañas; no promedian porcentajes.</p>';
+    if (!sl.depts.length) return h + '<p class="findings__note">Sin llamadas entrantes ofrecidas para los filtros seleccionados.</p></section>';
+    function pa(o) { return F.pct(o.ofrecidas ? o.abandonadas / o.ofrecidas * 100 : null); }
+    var rows = [];
+    sl.depts.forEach(function (d) {
+      rows.push('<tr class="is-group"><th scope="row">' + esc(d.dept) + '</th><td class="num">' + F.int(d.ofrecidas) + '</td><td class="num">' + F.int(d.atendidas) +
+        '</td><td class="num">' + F.int(d.sl20) + '</td><td class="num"><b>' + F.pct(d.ns) + '</b></td><td class="num">' + pa(d) + '</td></tr>');
+      d.rows.forEach(function (r) {
+        var flag = r.atendidas > 0 && r.atendidas < low ? ' <span class="ns-low" title="Menos de ' + low + ' atendidas: porcentaje poco representativo">volumen bajo</span>' : '';
+        rows.push('<tr><td class="ns-camp">' + esc(r.campaign) + '</td><td class="num">' + F.int(r.ofrecidas) + '</td><td class="num">' + F.int(r.atendidas) +
+          '</td><td class="num">' + F.int(r.sl20) + '</td><td class="num">' + F.pct(r.ns) + flag + '</td><td class="num">' + pa(r) + '</td></tr>');
+      });
+    });
+    rows.push('<tr class="is-total"><th scope="row">Total entrante</th><td class="num">' + F.int(sl.total.ofrecidas) + '</td><td class="num">' + F.int(sl.total.atendidas) +
+      '</td><td class="num">' + F.int(sl.total.sl20) + '</td><td class="num"><b>' + F.pct(sl.total.ns) + '</b></td><td class="num">' + pa(sl.total) + '</td></tr>');
+    return h + '<div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">Departamento / campaña</th><th scope="col">Ofrecidas</th><th scope="col">Atendidas</th>' +
+      '<th scope="col">Atendidas ≤' + thr + ' s</th><th scope="col">Nivel de servicio</th><th scope="col">% abandono</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div></section>';
   }
 
   function findingsBlock(list, area) {
@@ -389,7 +407,7 @@
     html += '<div class="kpis kpis--general">' +
       kpi('Entrantes ofrecidas', F.int(g.inb.ofrecidas), join(F.int(g.entrantes) + ' entrantes', F.int(g.inb.sinCola) + ' sin ingreso a cola'), { primary: true }) +
       kpi('% abandono entrante', F.pct(g.inb.pctAb), F.int(g.inb.abandonadas) + ' abandonadas / ' + F.int(g.inb.ofrecidas) + ' ofrecidas') +
-      kpi('Nivel de servicio entrante', F.pct(g.inb.ns), F.int(g.inb.atendidas) + ' atendidas / ' + F.int(g.inb.atendidas) + ' atendidas (fórmula vigente; ver Metodologías)') +
+      kpi('Nivel de servicio entrante (≤' + CONFIG.slThresholdSec + ' s)', F.pct(g.inb.ns), F.int(g.inb.sl20) + ' de ' + F.int(g.inb.atendidas) + ' atendidas') +
       kpi('Intentos salientes', F.int(g.out.intentos), join('Manual ' + b(F.int(g.outModes.Manual)), 'Marcador ' + b(F.int(g.outModes['Marcación'])),
         g.outModes.otro ? 'Sin modo ' + F.int(g.outModes.otro) : ''), { primary: true }) +
       kpi('% conexión saliente', F.pct(g.out.pctCon), F.int(g.out.con) + ' conectadas / ' + F.int(g.out.intentos) + ' intentos') +
@@ -405,46 +423,9 @@
       chartCard(charts, 'Distribución por hora: entrantes ofrecidas e intentos salientes', 'Llamadas por hora de inicio', CH.hourVolume(g.hour)) +
       chartCard(charts, 'Indicadores por departamento: % abandono entrante y % conexión saliente', 'Cada porcentaje usa su propio universo; no se suman', CH.deptRates(g.perDept)) +
       '</div>';
+    html += nsTable(M.serviceLevelByCampaign(recs));
     html += findingsBlock(FN.general(recs, g), 'consolidados');
-    html += method('Metodología, definiciones y controles de calidad', [
-      sec('Universo y definiciones', list([
-        '<b>Registro</b>: una fila de la hoja de detalle de inConcert (una llamada o intento).',
-        '<b>Entrante ofrecida</b>: entrante con «Buscó agente» = Si (ingresó a la cola). Las entrantes sin ingreso a cola se informan aparte.',
-        '<b>Atendida</b>: ofrecida con «Aten.» = Si. <b>Abandonada</b>: ofrecida con «Ab.» = Si.',
-        '<b>Intento saliente</b>: registro con «Inic.» = Sal. <b>Conectada</b>: «Aten.» = Si (conversación con agente). <b>Abandono tras contestar</b>: «Ab.» = Si. <b>No conectada</b>: «Canc.» = Si. Los tres estados son excluyentes (verificado en controles).',
-        '<b>Modo de marcación</b>: columna «Tipo de Llamada saliente» (Manual / Marcación).'
-      ]) + sec('Fórmulas', table(['Indicador', 'Fórmula'], [
-        ['% abandono entrante', 'abandonadas / ofrecidas × 100'],
-        ['Nivel de servicio', 'atendidas / total de atendidas × 100 (da 100 % siempre que haya atendidas; ver Metodologías)'],
-        ['% conexión saliente', 'conectadas / intentos × 100']
-      ])) + sec('Reglas comunes', list(COMMON_RULES))),
-      sec('Reconciliación con el Excel', qaTable()) + sec('Departamentos', deptTable())
-    ]);
     return { html: html, charts: charts };
-  }
-
-  function qaTable() {
-    var qa = state.model.qa, st = qa.parserStats || {};
-    function ok(cond, txt) { return '<span class="' + (cond ? 'qa-ok' : 'qa-warn') + '">' + txt + '</span>'; }
-    var rows = [
-      ['Filas leídas en la hoja de detalle', F.int(qa.totalFile), ok(true, 'Hoja «' + esc(state.model.meta.detailSheet || '—') + '»')],
-      ['Excluidas («No tomar en cuenta»)', F.int(qa.excludedTotal), ok(true, Object.keys(qa.excludedByCampaign).map(function (c) { return esc(c) + ': ' + qa.excludedByCampaign[c]; }).join(', ') || 'ninguna')],
-      ['Clasificadas por departamento', F.int(qa.sumDept), ok(qa.reconciled, qa.reconciled ? 'Clasificadas + excluidas = total del archivo' : 'No reconcilia')],
-      ['Sin departamento en la tabla', F.int(qa.unclassifiedTotal), ok(!qa.unclassifiedTotal, qa.unclassifiedTotal ? esc(qa.unmappedCampaigns.join(', ')) : 'Todas las campañas están mapeadas')],
-      ['Registros en más de un departamento', '0', ok(true, 'Imposible por construcción: un mapa campaña → departamento único')],
-      ['Identificadores de conversación duplicados', F.int(qa.duplicateIds), ok(!qa.duplicateIds, qa.recordsWithoutId ? F.int(qa.recordsWithoutId) + ' registros sin identificador' : 'Sin duplicados')],
-      ['Registros sin fecha válida', F.int(qa.recordsWithoutDate), ok(!qa.recordsWithoutDate, 'Quedan fuera de los filtros de fecha')],
-      ['Registros sin dirección (Ent./Sal.)', F.int(qa.recordsWithoutDirection), ok(!qa.recordsWithoutDirection, '')],
-      ['Salientes con estado único (Aten./Ab./Canc.)', F.int(qa.outboundStates.ok), ok(!qa.outboundStates.none && !qa.outboundStates.multi, F.int(qa.outboundStates.none) + ' sin estado · ' + F.int(qa.outboundStates.multi) + ' con más de uno')],
-      ['Ofrecidas sin «Aten.» ni «Ab.»', F.int(qa.inboundStates.ofrecidasSinEstado), ok(!qa.inboundStates.ofrecidasSinEstado, 'De ' + F.int(qa.inboundStates.ofrecidas) + ' ofrecidas')],
-      ['Duraciones > 2 h (espera / atención / conversación saliente)', F.int(qa.longDurations.we) + ' / ' + F.int(qa.longDurations.wa) + ' / ' + F.int(qa.longDurations.wc), ok(true, 'Excluidas de estadísticas de tiempo')],
-      ['Duraciones con formato no válido', F.int(st.invalidDurations || 0), ok(!st.invalidDurations, '')],
-      ['Teléfonos con prefijo 506 normalizado (11 → 8 dígitos)', F.int(st.phonePrefixStripped || 0), ok(true, 'Para contar números únicos')],
-      ['Días parciales confirmados', F.int(Object.keys(qa.partial).length), ok(true, Object.keys(qa.partial).map(function (d) { return fmtDate(d) + '* (' + qa.partial[d].cut + ')'; }).join(', ') || 'Ninguno')]
-    ];
-    return table(['Control', 'Valor', 'Resultado'], rows, [1]) +
-      '<p>Día parcial: el primer o último día se marca con * solo si su primer/último registro difiere al menos ' + CONFIG.partialDayMarginMin +
-      ' min del inicio más tardío / cierre más temprano de los demás días del mismo tipo (lunes a viernes, sábado o domingo).</p>';
   }
 
   function deptTable() {
@@ -484,7 +465,7 @@
     html += '<div class="kpis">' +
       kpi('Ofrecidas', F.int(v.ofrecidas), join(F.int(v.atendidas) + ' atendidas', F.int(v.abandonadas) + ' abandonadas', v.sinCola ? F.int(v.sinCola) + ' entrantes sin ingreso a cola' : ''), { primary: true }) +
       kpi('% abandono', F.pct(v.pctAb), abSub, { primary: true }) +
-      kpi('Atendidas en ≤' + CONFIG.slThresholdSec + ' s / ofrecidas', F.pct(v.pctSl20), F.int(v.sl20) + ' de ' + F.int(v.ofrecidas) + ' ofrecidas') +
+      kpi('Nivel de servicio (≤' + CONFIG.slThresholdSec + ' s)', F.pct(v.ns), F.int(v.sl20) + ' de ' + F.int(v.atendidas) + ' atendidas') +
       kpi('Espera promedio (atendidas)', F.sec(v.wait.mean), 'P90 ' + b(F.sec(v.wait.p90)) + ' · ' + F.int(v.wait.n) + ' esperas válidas',
         { alert: v.wait.excluded ? F.int(v.wait.excluded) + ' esperas > 2 h excluidas' : '' }) +
       kpi('Conversación promedio', F.min(v.talk.mean), 'Mediana ' + b(F.min(v.talk.median)) + ' · ' + F.int(v.talk.n) + ' válidas',
@@ -505,31 +486,6 @@
       chartCard(charts, 'Por agente: atendidas y conversación promedio', 'Último agente de la llamada atendida; conversación en minutos', CH.agentsInbound(ag)) +
       '</div>';
     html += findingsBlock(FN.inbound(recs.filter(function (r) { return r.dept === dept && r.d === 'E'; }), v, dept), dept);
-    html += method('Metodología, definiciones y controles (' + dept + ')', [
-      sec('Universo', list([
-        'Registros con departamento ' + dept + ' e «Inic.» = Ent.: ' + F.int(v.total) + '.',
-        '<b>Ofrecidas</b>: «Buscó agente» = Si → ' + F.int(v.ofrecidas) + '. Entrantes sin ingreso a cola: ' + F.int(v.sinCola) + ' (no cuentan como ofrecidas).',
-        '<b>Atendidas</b>: ofrecidas con «Aten.» = Si → ' + F.int(v.atendidas) + '. <b>Abandonadas</b>: ofrecidas con «Ab.» = Si → ' + F.int(v.abandonadas) + '.',
-        '<b>Abandono del sistema</b>: abandonadas con finalizador «ACD timeout» (' + F.int(v.abSistema) + '). <b>Abandono del cliente</b>: abandonadas con finalizador «Contacto» (' + F.int(v.abCliente) + '). Otras: ' + F.int(v.abOtro) + ' (finalizador no concluyente).',
-        'Ofrecidas sin «Aten.» ni «Ab.»: ' + F.int(v.sinEstado) + '.'
-      ])) + sec('Fórmulas', table(['Indicador', 'Fórmula', 'Campo'], [
-        ['% abandono', 'abandonadas / ofrecidas × 100', 'Ab.'],
-        ['% abandono cliente / sistema', 'abandonos de cada tipo / ofrecidas × 100', 'Ab., Finalizador'],
-        ['Nivel de servicio', 'atendidas / total de atendidas × 100 (100 % si hay atendidas)', 'Aten.'],
-        ['Atendidas en ≤' + CONFIG.slThresholdSec + ' s / ofrecidas', 'atendidas con espera ≤ ' + CONFIG.slThresholdSec + ' s / ofrecidas × 100', 'Tiempo Esp.'],
-        ['Espera promedio y P90', 'media y percentil 90 de esperas válidas de atendidas (s)', 'Tiempo Esp.'],
-        ['Conversación promedio y mediana', 'media y mediana de duraciones válidas de atendidas (min)', 'Tiempo atención'],
-        ['Transferencias', 'atendidas con «Tr.» = Si; exitosas: «Tr. Ok» = Si', 'Tr., Tr. Ok'],
-        ['Mapa de calor', 'abandonadas / ofrecidas por día de semana y hora; «—» si ofrecidas < ' + CONFIG.heatmapMinCalls, 'Fecha de inicio']
-      ])),
-      sec('Exclusiones y supuestos', list([
-        'Esperas > 2 h excluidas: ' + F.int(v.wait.excluded) + '; esperas nulas: ' + F.int(v.wait.invalid) + ' (una atendida sin espera válida no cuenta dentro del nivel de servicio).',
-        'Conversaciones > 2 h excluidas: ' + F.int(v.talk.excluded) + '; con 0 s (tratadas como no medidas): ' + F.int(v.talk.zeros) + '; nulas: ' + F.int(v.talk.invalid) + '.',
-        'Tramos de espera: atendidas y abandonadas según «Tiempo Esp.»; sin dato válido: ' + F.int(v.buckets.invalid.aten + v.buckets.invalid.ab) + '.',
-        'Agente: «Último agente» de cada llamada atendida.',
-        dept === 'Crédito' ? 'Referencia SAC en el gráfico por hora: % abandono de entrantes SAC con los mismos filtros de fecha y campaña.' : 'Crédito usa esta misma estructura cuando el Excel asigna campañas a Crédito.'
-      ].concat(COMMON_RULES)))
-    ]);
     return { html: html, charts: charts, after: function (panel) {
       panel.querySelectorAll('.segmented button').forEach(function (bt) {
         bt.addEventListener('click', function () { if (bt.disabled) return; state.creditView = bt.dataset.view; renderTab('sac'); });
@@ -562,31 +518,6 @@
       chartCard(charts, 'Por agente: resultado del intento y conversación promedio', 'Primer agente; conversación en minutos', CH.outboundAgents(agents)) +
       '</div>';
     html += findingsBlock(FN.ventas(recs.filter(function (r) { return r.dept === 'Ventas' && r.d === 'S'; }), v), 'Ventas');
-    var detailRows = Object.keys(v.groupDetail).sort(function (a, c) { return v.groupDetail[c].n - v.groupDetail[a].n; })
-      .map(function (k) { return [esc(k), esc(v.groupDetail[k].group), F.int(v.groupDetail[k].n)]; });
-    html += method('Metodología, definiciones y controles (Ventas)', [
-      sec('Universo y definiciones', list([
-        'Registros con departamento Ventas e «Inic.» = Sal.: ' + F.int(v.base.intentos) + ' intentos. Las entrantes de campañas de Ventas solo se muestran en General.',
-        '<b>Contestadas</b>: «Aten.» = Si o «Ab.» = Si (' + F.int(v.base.contestadas) + '). <b>Con agente / conectadas</b>: «Aten.» = Si (' + F.int(v.base.con) + ').',
-        '<b>Abandono del marcador</b>: «Ab.» = Si en modo Marcación (' + F.int(v.base.abMarc) + '). Abandono tras contestar en modo manual: ' + F.int(v.base.abOtro) + ' (se muestra aparte, no entra en el % de marcador).',
-        '<b>No conectadas</b>: «Canc.» = Si (' + F.int(v.base.noCon) + ').',
-        '<b>Gestión tipificada</b>: registro con «Disp. Abs.» (o «Disp.») distinto de N/A o vacío.',
-        '<b>Números únicos</b>: valores distintos de «Dir.» tras normalizar dígitos (prefijo 506 en números de 11 dígitos se elimina). Registros sin número: ' + F.int(v.sinNumero) + '.'
-      ])) + sec('Fórmulas', table(['Indicador', 'Fórmula'], [
-        ['% conexión', 'conectadas / intentos × 100'],
-        ['% abandono del marcador', 'abandonos del marcador / (conectadas en marcador + abandonos del marcador) × 100'],
-        ['Gestión tipificada / intentos', 'registros tipificados / intentos × 100'],
-        ['Intentos por número', 'intentos / números únicos'],
-        ['Conversación', 'media y mediana de «Tiempo Conc.» válidos de conectadas (min)']
-      ])),
-      sec('Embudo y agrupación de tipificaciones', list([
-        'El embudo usa etapas anidadas verificables: cada etapa es subconjunto de la anterior. «Tipificada» y «Seguimiento» se cuentan solo dentro de las conectadas.',
-        'Registros tipificados sin conexión con agente (fuera del embudo): ' + F.int(v.tipNoCon) + '; de ellos en grupo Seguimiento: ' + F.int(v.segNoCon) + '.',
-        'Seguimiento: toda tipificación bajo la ruta «/Seguimiento/». Sin contacto efectivo: «/Baja/Sin contacto efectivo». Baja por riesgo y Baja por desinterés: tipificaciones «/Baja/…» listadas abajo. Las demás se muestran como «Otras tipificaciones (sin agrupar)»; no se asignan por similitud.',
-        'Conversación: «Tiempo Conc.». Conectadas con 0 s se consideran no medidas: ' + F.int(v.talk.zeros) + ' (en la campaña coocique_central el campo llega en 0 para las salientes manuales). Excluidas > 2 h: ' + F.int(v.talk.excluded) + '.'
-      ]) + (detailRows.length ? table(['Tipificación (conectadas)', 'Grupo', 'Conectadas'], detailRows, [2]) : '')),
-      sec('Reglas comunes', list(COMMON_RULES.concat(['Agente: «Primer agente» del intento; intentos sin agente: ' + F.int(v.sinAgente) + '.'])))
-    ]);
     return { html: html, charts: charts };
   }
 
@@ -620,28 +551,6 @@
       chartCard(charts, 'Línea entrante por fecha: atendidas, abandonadas y % abandono', join('Entrantes ofrecidas de Cobros; % sobre ofrecidas', pn), CH.inboundSeries(inb.byDay, days(c.ax)), true) +
       '</div>';
     html += findingsBlock(FN.cobros(recs.filter(function (r) { return r.dept === 'Cobros' && r.d === 'S'; }), c), 'Cobros');
-    html += method('Metodología, definiciones y controles (Cobros)', [
-      sec('Universo y definiciones', list([
-        'Salientes de Cobros por modo («Tipo de Llamada saliente»): manual ' + F.int(man.intentos) + ', marcador ' + F.int(mar.intentos) + (c.modes.otro.intentos ? ', sin modo ' + F.int(c.modes.otro.intentos) : '') + '. Cada intento pertenece a un único modo.',
-        '<b>Contestadas</b>: «Aten.» = Si o «Ab.» = Si. <b>Con agente</b>: «Aten.» = Si. <b>No conectadas</b>: «Canc.» = Si.',
-        '<b>Abandono del marcador</b>: «Ab.» = Si en modo Marcación (' + F.int(mar.abMarc) + ').',
-        '<b>Línea entrante</b>: entrantes de Cobros; ofrecidas = «Buscó agente» = Si (' + F.int(inb.ofrecidas) + ' de ' + F.int(inb.total) + ' entrantes). Sus denominadores no se mezclan con los salientes.',
-        'Esta vista no muestra tipificaciones, resultados de contacto, contacto efectivo ni compromisos.'
-      ])) + sec('Fórmulas', table(['Indicador', 'Fórmula'], [
-        ['% conexión (total y por modo)', 'conectadas / intentos × 100, dentro de cada universo'],
-        ['% abandono del marcador', 'abandonos del marcador / (conectadas en marcador + abandonos del marcador) × 100'],
-        ['Intentos por número', 'intentos salientes / números únicos («Dir.» normalizado)'],
-        ['Conversación', 'media y mediana de «Tiempo Conc.» válidos de conectadas (min)'],
-        ['% abandono línea entrante', 'abandonadas / ofrecidas × 100'],
-        ['Atendidas en ≤' + CONFIG.slThresholdSec + ' s (embudo entrante)', 'atendidas con «Tiempo Esp.» ≤ ' + CONFIG.slThresholdSec + ' s / ofrecidas'],
-        ['Nivel de servicio', 'atendidas / total de atendidas × 100 (100 % si hay atendidas)']
-      ])),
-      sec('Exclusiones y supuestos', list([
-        'Conversaciones > 2 h excluidas: ' + F.int(c.talk.excluded) + '; con 0 s no medidas: ' + F.int(c.talk.zeros) + '; nulas: ' + F.int(c.talk.invalid) + '.',
-        'Registros sin número: ' + F.int(c.sinNumero) + '. Intentos sin agente: ' + F.int(c.sinAgente) + '.',
-        'Top de agentes: ' + CONFIG.topAgents + ' agentes con más intentos («Primer agente») en la selección.'
-      ].concat(COMMON_RULES)))
-    ]);
     return { html: html, charts: charts };
   }
 
@@ -664,6 +573,15 @@
       ['Registros sin fecha válida', F.int(qa.recordsWithoutDate), ok(!qa.recordsWithoutDate, 'Se conservan; quedan fuera de los filtros de fecha')],
       ['Clasificadas + excluidas = total del archivo', F.int(qa.sumDept) + ' + ' + F.int(qa.excludedTotal), ok(qa.reconciled, qa.reconciled ? 'Reconcilia con ' + F.int(qa.totalFile) : 'No reconcilia')]
     ];
+    rows.push(
+      ['Registros en más de un departamento', '0', ok(true, 'Imposible por construcción: un mapa campaña → departamento único')],
+      ['Registros sin dirección (Ent./Sal.)', F.int(qa.recordsWithoutDirection), ok(!qa.recordsWithoutDirection, 'Se conservan')],
+      ['Salientes con estado único (Aten./Ab./Canc.)', F.int(qa.outboundStates.ok), ok(!qa.outboundStates.none && !qa.outboundStates.multi, F.int(qa.outboundStates.none) + ' sin estado · ' + F.int(qa.outboundStates.multi) + ' con más de uno')],
+      ['Ofrecidas sin «Aten.» ni «Ab.»', F.int(qa.inboundStates.ofrecidasSinEstado), ok(!qa.inboundStates.ofrecidasSinEstado, 'De ' + F.int(qa.inboundStates.ofrecidas) + ' ofrecidas')],
+      ['Duraciones con formato no válido', F.int(st.invalidDurations || 0), ok(!st.invalidDurations, 'Se tratan como nulas; el registro se conserva')],
+      ['Teléfonos con prefijo 506 normalizado (11 → 8 dígitos)', F.int(st.phonePrefixStripped || 0), ok(true, 'Solo para contar números únicos')],
+      ['Días parciales confirmados', F.int(Object.keys(qa.partial).length), ok(true, Object.keys(qa.partial).map(function (d) { return fmtDate(d) + '* (corte ' + qa.partial[d].cut + ')'; }).join(', ') || 'Ninguno')]
+    );
     if (state.lastExport != null) rows.push(['Registros en la última exportación', F.int(state.lastExport), ok(state.lastExport === kept, 'Comparado con los conservados')]);
     return table(['Control', 'Valor', 'Resultado'], rows, [1]);
   }
@@ -701,8 +619,14 @@
         'Si una carga falla (archivo vacío, inválido o incompatible), se conserva el último conjunto de datos válido y se muestra el motivo.',
         'Si una métrica no puede calcularse, se muestra «—» y se informa; los registros se conservan.',
         'Las filas totalmente vacías del Excel no contienen datos y no generan registros; se informan en el control.'
-      ])) + sub('Nivel de servicio: definición vigente', '<p>Nivel de servicio = atendidas / total de atendidas × 100. Por construcción, numerador y denominador son iguales: el indicador da <b>100 %</b> siempre que haya al menos una atendida y «—» si no hay ninguna. No mide la rapidez de atención ni el umbral de ' + sl +
-        ' s. La proporción de atendidas en ≤' + sl + ' s sobre las ofrecidas se conserva como indicador separado («Atendidas en ≤' + sl + ' s / ofrecidas») en SAC, en Crédito y en el embudo entrante de Cobros.</p>') + '</div></div></section>';
+      ])) + sub('Nivel de servicio', '<p>Nivel de servicio = atendidas con «Tiempo Esp.» ≤ ' + sl + ' s / total de atendidas × 100. Se calcula por campaña de entrada y, para departamentos y total, sumando los conteos de sus campañas (nunca promediando porcentajes). Una campaña sin atendidas muestra «—»; con menos de ' + CONFIG.findingsMinN + ' atendidas se marca como volumen bajo.</p><p>El denominador son las atendidas: las llamadas abandonadas no entran en este indicador. Por eso se presenta junto al % de abandono (abandonadas / ofrecidas), en las tarjetas y en la tabla «Nivel de servicio por campaña» de General. Una atendida sin espera válida cuenta en el denominador y no en el numerador.</p>') + '</div></div></section>';
+
+    html += '<section class="metodo-sec"><div class="metodo-sec__head"><h3>Clasificación por departamento y tabla de campañas</h3></div><div class="method__body"><div>' +
+      deptTable() + '</div><div>' + sub('Criterio', list([
+        'Cada campaña se asigna al departamento indicado en la tabla «Campaña → Departamento» del propio Excel; cada registro pertenece a un único departamento.',
+        'Las campañas marcadas «' + CONFIG.excludeLabel + '» se conservan, pero se excluyen de los cálculos operativos.',
+        'Las campañas que no figuran en la tabla se muestran como «Sin clasificar» y generan un aviso.'
+      ])) + '</div></div></section>';
 
     html += deptSection('i-sac', 'SAC', {
       left: [
@@ -715,8 +639,7 @@
           ['Ofrecidas', 'entrantes con «Buscó agente» = Si', 'Buscó agente'],
           ['% abandono', 'abandonadas / ofrecidas × 100', 'Ab.'],
           ['% abandono cliente / sistema', 'abandonos de cada tipo / ofrecidas × 100', 'Ab., Finalizador'],
-          ['Nivel de servicio', 'atendidas / total de atendidas × 100', 'Aten.'],
-          ['Atendidas en ≤' + sl + ' s / ofrecidas', 'atendidas con espera ≤ ' + sl + ' s / ofrecidas × 100', 'Tiempo Esp.'],
+          ['Nivel de servicio (≤' + sl + ' s)', 'atendidas con espera ≤ ' + sl + ' s / total de atendidas × 100, por campaña y total', 'Aten., Tiempo Esp.'],
           ['Espera promedio y P90', 'media y percentil 90 (interpolación lineal) de esperas válidas de atendidas, en s', 'Tiempo Esp.'],
           ['Conversación promedio y mediana', 'sobre duraciones válidas de atendidas, en min', 'Tiempo atención'],
           ['Transferencias', 'atendidas con «Tr.» = Si; completadas: «Tr. Ok» = Si', 'Tr., Tr. Ok'],
@@ -733,20 +656,28 @@
         sub('Reglas de inclusión, exclusión y tratamiento', list([
           'Esperas > 2 h excluidas de estadísticas: ' + F.int(sac.wait.excluded) + '; conversaciones > 2 h: ' + F.int(sac.talk.excluded) + '. Se cuentan en los volúmenes.',
           'Conversaciones de 0 s se tratan como no medidas (' + F.int(sac.talk.zeros) + ').',
-          'Celdas del mapa de calor con menos de ' + CONFIG.heatmapMinCalls + ' ofrecidas muestran «—».'
+          'Celdas del mapa de calor con menos de ' + CONFIG.heatmapMinCalls + ' ofrecidas muestran «—».',
+          'Tramos de espera sin dato válido: ' + F.int(sac.buckets.invalid.aten + sac.buckets.invalid.ab) + '. Ofrecidas sin «Aten.» ni «Ab.»: ' + F.int(sac.sinEstado) + '.'
         ])),
         sub('Supuestos y limitaciones', list([
-          'El nivel de servicio vigente es 100 % cuando hay atendidas (ver definición arriba).',
-          'Una atendida sin espera válida no cuenta dentro de «Atendidas en ≤' + sl + ' s».',
+          'El nivel de servicio no incluye abandonadas en su denominador; debe leerse junto al % de abandono.',
+          'Una atendida sin espera válida cuenta en el denominador del nivel de servicio y no en el numerador (' + F.int(sac.atenSinEspera) + ' en el archivo).',
           'La clasificación de abandonos depende del finalizador registrado por inConcert.'
         ]))
       ]
     });
 
     var grpRows = [];
-    Object.keys(CONFIG.salesGroups.exactRules).forEach(function (k) { grpRows.push([esc(k), esc(CONFIG.salesGroups.exactRules[k])]); });
-    CONFIG.salesGroups.prefixRules.forEach(function (r) { grpRows.push([esc(r.prefix) + '…', esc(r.group)]); });
-    grpRows.push(['Cualquier otra tipificación', 'Otras tipificaciones (sin agrupar)'], ['Sin «Disp. Abs.» ni «Disp.»', 'Sin tipificación']);
+    var gd = v.groupDetail;
+    function cnt(k) { return F.int(gd[k] ? gd[k].n : 0); }
+    Object.keys(CONFIG.salesGroups.exactRules).forEach(function (k) { grpRows.push([esc(k), esc(CONFIG.salesGroups.exactRules[k]), cnt(k)]); });
+    CONFIG.salesGroups.prefixRules.forEach(function (r) {
+      var n = Object.keys(gd).filter(function (k) { return k.indexOf(r.prefix) === 0; }).reduce(function (a, k) { return a + gd[k].n; }, 0);
+      grpRows.push([esc(r.prefix) + '…', esc(r.group), F.int(n)]);
+    });
+    var otras = Object.keys(gd).filter(function (k) { return gd[k].group === 'Otras tipificaciones (sin agrupar)'; });
+    grpRows.push(['Cualquier otra tipificación' + (otras.length ? ' (' + otras.map(esc).join(', ') + ')' : ''), 'Otras tipificaciones (sin agrupar)', F.int(v.groups['Otras tipificaciones (sin agrupar)'] || 0)],
+      ['Sin «Disp. Abs.» ni «Disp.»', 'Sin tipificación', F.int(v.groups['Sin tipificación'] || 0)]);
     html += deptSection('i-ventas', 'Ventas', {
       left: [
         sub('Objetivo y universo de datos', '<p>Medir la gestión saliente de Ventas: intentos, contactabilidad, abandono del marcador, tipificación de las gestiones y resultado de las conectadas.</p>' + list([
@@ -770,7 +701,7 @@
           'Contestadas = conectadas + abandonos tras contestar. Embudo anidado: intentos → contestadas → con agente → con agente y tipificada → seguimiento.',
           'Tipificación válida: «Disp. Abs.» (o «Disp.») distinto de N/A o vacío.',
           'Agrupación de tipificaciones de las conectadas (literal, sin asignar por similitud):'
-        ]) + table(['Tipificación', 'Grupo'], grpRows)),
+        ]) + table(['Tipificación', 'Grupo', 'Conectadas'], grpRows, [2])),
         sub('Reglas de inclusión, exclusión y tratamiento', list([
           'Teléfonos: solo dígitos; números de 11 dígitos con prefijo 506 se reducen a 8.',
           'Conversaciones > 2 h excluidas de estadísticas: ' + F.int(v.talk.excluded) + '; con 0 s no medidas: ' + F.int(v.talk.zeros) + '.'
@@ -778,7 +709,7 @@
         sub('Supuestos y limitaciones', list([
           'En coocique_central, las salientes conectadas registran «Tiempo Conc.» = 0; la conversación de Ventas se calcula con ' + F.int(v.talk.n) + ' conectadas con duración medida.',
           'Registros tipificados sin conexión con agente: ' + F.int(v.tipNoCon) + ' (cuentan en «gestión tipificada», no en el embudo).',
-          'Agente: «Primer agente» del intento.'
+          'Agente: «Primer agente» del intento; intentos sin agente: ' + F.int(v.sinAgente) + '. Intentos sin número: ' + F.int(v.sinNumero) + '.'
         ]))
       ]
     });
@@ -795,8 +726,7 @@
           ['Números únicos e intentos por número', 'valores distintos de «Dir.» normalizado; intentos / números únicos'],
           ['Conversación promedio y mediana', '«Tiempo Conc.» válido de conectadas, en min'],
           ['% abandono línea entrante', 'abandonadas / ofrecidas × 100'],
-          ['Nivel de servicio (línea entrante)', 'atendidas / total de atendidas × 100'],
-          ['Atendidas en ≤' + sl + ' s (embudo entrante)', 'atendidas con espera ≤ ' + sl + ' s / ofrecidas']
+          ['Nivel de servicio (línea entrante)', 'atendidas con espera ≤ ' + sl + ' s / total de atendidas × 100']
         ]))
       ],
       right: [
@@ -807,7 +737,8 @@
         ])),
         sub('Reglas de inclusión, exclusión y tratamiento', list([
           'Los denominadores de salientes manuales, marcador y entrantes no se mezclan.',
-          'Conversaciones > 2 h excluidas de estadísticas: ' + F.int(c.talk.excluded) + '; con 0 s no medidas: ' + F.int(c.talk.zeros) + '.'
+          'Conversaciones > 2 h excluidas de estadísticas: ' + F.int(c.talk.excluded) + '; con 0 s no medidas: ' + F.int(c.talk.zeros) + '; nulas: ' + F.int(c.talk.invalid) + '.',
+          'Intentos sin número: ' + F.int(c.sinNumero) + '; sin agente: ' + F.int(c.sinAgente) + '.'
         ])),
         sub('Supuestos y limitaciones', list([
           'Las diferencias entre modos no prueban una causa: las bases asignadas a cada modo pueden ser distintas.',
@@ -824,7 +755,7 @@
           hasCr ? 'Universo: ' + F.int(cr.total) + ' entrantes (' + F.int(cr.ofrecidas) + ' ofrecidas) y ' + F.int((qa.byDept['Crédito'] || {}).S || 0) + ' salientes.'
             : 'En el archivo cargado ninguna campaña está asignada a Crédito; sus indicadores no pueden calcularse. Las campañas con «credito» en el nombre están asignadas a Ventas por la tabla del Excel y no se reclasifican.'
         ])),
-        sub('Indicadores y fórmulas', '<p>Los de SAC (ofrecidas, % abandono cliente/sistema, nivel de servicio, atendidas en ≤' + sl + ' s / ofrecidas, espera, conversación y mapa de calor). Sexta tarjeta: salientes de Crédito y su % de conexión (conectadas / intentos × 100), solo si ambos datos existen. Gráfico por hora: % abandono SAC como referencia con los mismos filtros.</p>')
+        sub('Indicadores y fórmulas', '<p>Los de SAC (ofrecidas, % abandono cliente/sistema, nivel de servicio ≤' + sl + ' s sobre atendidas, espera, conversación y mapa de calor). Sexta tarjeta: salientes de Crédito y su % de conexión (conectadas / intentos × 100), solo si ambos datos existen. Gráfico por hora: % abandono SAC como referencia con los mismos filtros.</p>')
       ],
       right: [
         sub('Criterios, reglas y limitaciones', list([

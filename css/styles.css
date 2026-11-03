@@ -175,6 +175,21 @@ body {
 .qa-ok::before { content: '✓ '; color: var(--navy); font-weight: 700; }
 .qa-warn::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--orange); margin-right: 6px; }
 
+/* Nivel de servicio por campaña (General) */
+.ns-table { margin-top: var(--s34); }
+.ns-table__lead { margin: 0 0 var(--s13); }
+.data-table { border-collapse: collapse; width: 100%; font-size: var(--fs13); font-variant-numeric: tabular-nums; }
+.data-table th, .data-table td { padding: var(--s8) var(--s13); border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.data-table thead th { color: var(--navy); font-weight: 700; border-bottom: 2px solid var(--navy); }
+.data-table .num { text-align: right; }
+.data-table thead th:not(:first-child) { text-align: right; }
+.data-table tr.is-group th, .data-table tr.is-group td { background: var(--tint); color: var(--navy); font-weight: 700; }
+.data-table tr.is-total th, .data-table tr.is-total td { border-top: 2px solid var(--navy); color: var(--navy); font-weight: 700; }
+.data-table .ns-camp { padding-left: var(--s34); }
+.data-table b { color: var(--navy); }
+.ns-low { font-size: 11px; color: var(--muted); margin-left: 4px; }
+.ns-low::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--orange); margin-right: 4px; vertical-align: 0; }
+
 /* Hallazgos operativos: debajo de todos los gráficos */
 .findings { margin-top: var(--s34); }
 .findings__title { margin: 0 0 var(--s13); font-size: var(--fs21); color: var(--navy); line-height: 1.3; }

@@ -304,15 +304,45 @@
       atendidas: aten.length, abandonadas: ab.length, abSistema: abSis.length, abCliente: abCli.length, abOtro: abOtro,
       sinEstado: sinEstado,
       pctAb: ratio(ab.length, ofr.length), pctAbSis: ratio(abSis.length, ofr.length), pctAbCli: ratio(abCli.length, ofr.length),
-      sl20: sl, pctSl20: ratio(sl, ofr.length), atenSinEspera: waitAten.invalid,
-      // Nivel de servicio según definición vigente: atendidas / total de atendidas × 100 (100 % si hay atendidas)
-      ns: ratio(aten.length, aten.length),
+      sl20: sl, atenSinEspera: waitAten.invalid,
+      // Nivel de servicio: atendidas con espera <= 20 s / total de atendidas × 100
+      ns: ratio(sl, aten.length),
       wait: { n: waitAten.n, mean: mean(waitAten.values), p90: percentile(waitAten.values, 0.9), excluded: waitAten.excluded, invalid: waitAten.invalid },
       talk: { n: talk.n, mean: talk.n ? mean(talk.values) / 60 : null, median: talk.n ? percentile(talk.values, 0.5) / 60 : null,
         excluded: talk.excluded, invalid: talk.invalid, zeros: talk.zeros },
       transfers: { n: tr.length, ok: tr.filter(function (r) { return r.tro === 1; }).length, pct: ratio(tr.length, aten.length) },
       byDay: byDay, byHour: byHour, heat: heat, buckets: { aten: bAten, ab: bAb, invalid: bInvalid }, agents: agents
     };
+  }
+
+  // Nivel de servicio por campaña y departamento: atendidas <= umbral / atendidas
+  function serviceLevelByCampaign(recs) {
+    var by = {};
+    recs.forEach(function (r) {
+      if (r.d !== 'E' || r.q !== 1) return;
+      var k = r.dept + '\u0000' + r.c;
+      var o = by[k] || (by[k] = { dept: r.dept, campaign: r.c, ofrecidas: 0, atendidas: 0, abandonadas: 0, sl20: 0, sinEspera: 0 });
+      o.ofrecidas++;
+      if (r.ab === 1) o.abandonadas++;
+      if (r.a === 1) {
+        o.atendidas++;
+        if (r.we == null || r.we < 0 || r.we > CONFIG.maxDurationSec) o.sinEspera++;
+        else if (r.we <= CONFIG.slThresholdSec) o.sl20++;
+      }
+    });
+    var order = CONFIG.departments.concat([UNCLASSIFIED]);
+    var rows = Object.keys(by).map(function (k) { var o = by[k]; o.ns = ratio(o.sl20, o.atendidas); return o; })
+      .sort(function (a, b) { return order.indexOf(a.dept) - order.indexOf(b.dept) || b.atendidas - a.atendidas || b.ofrecidas - a.ofrecidas; });
+    var depts = [], total = { ofrecidas: 0, atendidas: 0, abandonadas: 0, sl20: 0, sinEspera: 0 };
+    order.forEach(function (d) {
+      var l = rows.filter(function (r) { return r.dept === d; });
+      if (!l.length) return;
+      var t = { dept: d, ofrecidas: 0, atendidas: 0, abandonadas: 0, sl20: 0, sinEspera: 0 };
+      l.forEach(function (r) { ['ofrecidas', 'atendidas', 'abandonadas', 'sl20', 'sinEspera'].forEach(function (f) { t[f] += r[f]; total[f] += r[f]; }); });
+      t.ns = ratio(t.sl20, t.atendidas); t.rows = l; depts.push(t);
+    });
+    total.ns = ratio(total.sl20, total.atendidas);
+    return { depts: depts, total: total };
   }
 
   // ---------- salientes ----------
@@ -486,7 +516,7 @@
 
   var api = {
     prepare: prepare, applyFilters: applyFilters, computeGeneral: computeGeneral,
-    computeInboundView: computeInboundView, computeVentas: computeVentas, computeCobros: computeCobros,
+    computeInboundView: computeInboundView, serviceLevelByCampaign: serviceLevelByCampaign, computeVentas: computeVentas, computeCobros: computeCobros,
     salesGroup: salesGroup, percentile: percentile, UNCLASSIFIED: UNCLASSIFIED
   };
   root.CTMetrics = api;

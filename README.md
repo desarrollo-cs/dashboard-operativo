@@ -2,7 +2,15 @@
 
 Dashboard web estático para el reporte de llamadas de inConcert «ReportDetailInOutCallsByCampaign» de Coocique. No usa backend ni credenciales. Tiene cinco pestañas: General, Operativa SAC, Operativa Ventas, Operativa Cobros y Metodologías. Crédito se integra en General, en los filtros, en la vista SAC y en Metodologías.
 
-Cada vista operativa y General terminan, debajo de los gráficos, con cuatro **hallazgos operativos** calculados por reglas a partir de los datos filtrados. La pestaña **Metodologías** reúne las metodologías por departamento, los avisos de calidad de datos, el control de integridad de los registros y los botones «Cargar Excel» y «Exportar dataset anonimizado».
+Cada vista operativa y General terminan, debajo de los gráficos, con cuatro **hallazgos operativos** calculados por reglas a partir de los datos filtrados. General incluye además la tabla **«Nivel de servicio por campaña»**. La pestaña **Metodologías** es el único lugar con definiciones y controles. Reúne:
+
+- las metodologías por departamento;
+- los avisos de calidad de datos;
+- el control de integridad de los registros;
+- la clasificación por departamento y la tabla de campañas;
+- los botones «Cargar Excel» y «Exportar dataset anonimizado».
+
+Las páginas operativas ya no repiten esa información.
 
 Se publica en GitHub Pages y se actualiza a diario de una de dos formas:
 
@@ -131,8 +139,7 @@ Si el sitio no debe ser visible fuera de la organización, usa Pages con control
 | Entrante ofrecida | `Inic.` = Ent. y `Buscó agente` = Si |
 | Atendida / abandonada | Ofrecida con `Aten.` = Si / con `Ab.` = Si |
 | Abandono del sistema / del cliente | Abandonada con `Finalizador` = «ACD timeout» / = «Contacto». Los demás finalizadores se informan como «sin determinar». |
-| Nivel de servicio | Atendidas / total de atendidas × 100. **Por construcción da 100 % siempre que haya atendidas** (y «—» si no hay). Es la definición vigente solicitada y está documentada en Metodologías. |
-| Atendidas en ≤ 20 s / ofrecidas | Atendidas con `Tiempo Esp.` ≤ 20 s / ofrecidas. Indicador separado que se conserva en SAC, Crédito y el embudo entrante de Cobros. |
+| Nivel de servicio | Atendidas con `Tiempo Esp.` ≤ 20 s / total de atendidas × 100. Se calcula por campaña; los departamentos y el total suman conteos y no promedian porcentajes. Una campaña sin atendidas muestra «—». Con menos de 20 atendidas se marca «volumen bajo». No incluye abandonadas en el denominador, por eso se muestra junto al % de abandono. Con el archivo actual: total 69,4 %, SAC 63,6 %, Ventas 73,5 %, Cobros 94,2 %. |
 | Intento saliente | `Inic.` = Sal. El modo sale de `Tipo de Llamada saliente`. |
 | Conectada (con agente) | `Aten.` = Si |
 | Contestada | `Aten.` = Si o `Ab.` = Si |
@@ -231,7 +238,7 @@ Sobre la conversación de 0 s: en `coocique_central`, las 43 salientes conectada
 
 ## Controles de calidad ejecutados
 
-**`node scripts/qa-check.mjs` (37 controles, todos superados con el archivo actual)**
+**`node scripts/qa-check.mjs` (41 controles, todos superados con el archivo actual)**
 
 - Pruebas unitarias de:
   - parseo de duraciones, fechas y teléfonos;
@@ -244,19 +251,20 @@ Sobre la conversación de 0 s: en `coocique_central`, las 43 salientes conectada
 - Consistencia entre pestañas.
 - Embudos con etapas anidadas.
 
-- Nivel de servicio vigente (100 %) y el indicador ≤ 20 s conservado aparte.
+- Nivel de servicio (≤ 20 s / atendidas) por campaña: sumas por campaña = totales, total = General, departamento = vista operativa, y «—» sin atendidas.
 - Integridad de registros: incluidos + excluidos = cargados, y los filtros no alteran los datos.
 - Hallazgos: un máximo de 4 por vista, cada uno con dato e implicación; los de Cobros, sin tipificaciones.
 
 Con una campaña sin mapear, el script falla como corresponde.
 
-**Pruebas en navegador, versión con Metodologías y hallazgos (Chromium sin interfaz, Playwright; 37 de 37 superadas)**
+**Pruebas en navegador, versión actual (Chromium sin interfaz, Playwright; 42 de 42 superadas)**
 
 | Área | Qué se verificó |
 |---|---|
 | Pestañas y botones | Cinco pestañas en orden. «Cargar Excel» y «Exportar dataset anonimizado» existen una sola vez y solo en Metodologías; carga con ratón y teclado. Bullets superiores eliminados. |
 | General | Orden de tarjetas y anchos (283/175/175/283/175/175 px) |
-| Nivel de servicio | 100 % en General; SAC conserva 38,7 % en «Atendidas en ≤ 20 s / ofrecidas»; documentado en Metodologías |
+| Nivel de servicio | General 69,4 %, SAC 63,6 %. La tabla por campaña coincide fila por fila con el cálculo aprobado (13 filas), se ubica debajo de los gráficos, responde a filtros (sin SAC: 83,6 %) y marca volumen bajo solo con 1–19 atendidas. |
+| Metodología | Sin secciones de metodología en las cuatro páginas operativas; tabla de campañas, controles y tipificaciones aparecen una sola vez, en Metodologías |
 | Hallazgos | 4 por vista, debajo de todos los gráficos; cambian con los filtros; aviso sin hallazgos cuando el volumen no alcanza; Crédito con datos sintéticos |
 | Ventas | Colores de «Por fecha» incluidos en la paleta de tipificación |
 | Preservación | 8.149 registros conservados al filtrar, exportar y tras cargas vacías, incompatibles o no Excel; exportación con las campañas «No tomar en cuenta»; exportación del integrado idéntica al original |
