@@ -31,13 +31,57 @@
       showEmptyPanels('Carga el Excel desde la pestaña «Metodologías» para ver el dashboard.');
       return;
     }
+    if (!CONFIG.cloudUrl) { loadBundled(''); return; }
+    showEmptyPanels('Cargando datos desde la nube…');
+    setStatus('Cargando datos desde la nube…');
+    fetch(CONFIG.cloudUrl)
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (json) {
+        if (!json.rows || !json.rows.length) { loadBundled('La nube aún no tiene registros guardados. '); return; }
+        setDataset(P.fromCompact(json), 'nube');
+        setStatus('Datos cargados desde la nube: ' + F.int(json.rows.length) + ' registros' + (json.generatedAt ? ' (guardados el ' + new Date(json.generatedAt).toLocaleString(CONFIG.locale) + ')' : '') + '.');
+      })
+      .catch(function (e) { loadBundled('No se pudo leer la nube (' + e.message + '). '); });
+  }
+
+  // Respaldo: dataset incluido en el sitio. «why» explica por qué no se usó la nube.
+  function loadBundled(why) {
     fetch(CONFIG.defaultDatasetPath, { cache: 'no-cache' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(function (json) { setDataset(P.fromCompact(json), 'integrado'); })
+      .then(function (json) {
+        setDataset(P.fromCompact(json), 'integrado');
+        if (why) setStatus(why + 'Se muestra el dataset integrado del sitio.', true);
+      })
       .catch(function (e) {
-        setStatus('No se encontró el dataset integrado (' + e.message + '). Carga el Excel con el botón «Cargar Excel».', true);
+        setStatus(why + 'No se encontró el dataset integrado (' + e.message + '). Carga el Excel con el botón «Cargar Excel».', true);
         showEmptyPanels('Carga el Excel desde la pestaña «Metodologías» para ver el dashboard.');
       });
+  }
+
+  // Guarda en la nube el Excel cargado. Los teléfonos viajan normalizados por HTTPS y el script los convierte
+  // en hash con una sal secreta antes de escribirlos; los nombres de contacto nunca salen del navegador.
+  function saveCloud() {
+    if (!state.dataset || state.sourceKind !== 'local') return;
+    var clave = '';
+    try { clave = sessionStorage.getItem('ctClave') || ''; } catch (e) { /* sin almacenamiento de sesión */ }
+    if (!clave) clave = window.prompt('Clave de escritura de la nube:') || '';
+    if (!clave) return;
+    var btn = $('btnCloud'), n = state.dataset.records.length;
+    btn.disabled = true;
+    setStatus('Guardando ' + F.int(n) + ' registros en la nube…');
+    P.toCompact(state.dataset, function (x) { return Promise.resolve(x); })
+      .then(function (compact) { return fetch(CONFIG.cloudUrl, { method: 'POST', body: JSON.stringify({ clave: clave, dataset: compact }) }); })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (res) {
+        if (!res.ok) { try { sessionStorage.removeItem('ctClave'); } catch (e) { /* idem */ } throw new Error(res.error || 'respuesta inesperada'); }
+        try { sessionStorage.setItem('ctClave', clave); } catch (e) { /* idem */ }
+        var msg = 'Guardado en la nube: ' + F.int(res.added) + ' registros nuevos y ' + F.int(res.updated) + ' actualizados. Total en la nube: ' + F.int(res.total) + '.';
+        setStatus(msg);
+        window.alert(msg);
+        loadDefault();
+      })
+      .catch(function (e) { setStatus('No se pudo guardar en la nube: ' + e.message + '. Los datos cargados siguen visibles en este navegador.', true); })
+      .then(function () { btn.disabled = state.sourceKind !== 'local'; });
   }
 
   function showEmptyPanels(msg) {
@@ -101,6 +145,8 @@
     state.model = M.prepare(ds);
     CH.setPartialDays(state.model.partial);
     $('btnExport').disabled = false;
+    $('btnCloud').hidden = !CONFIG.cloudUrl;
+    $('btnCloud').disabled = kind !== 'local';
     buildFilterControls();
     resetFilters();
   }
@@ -201,6 +247,7 @@
     var upl = document.querySelector('label[for="fileInput"]');
     upl.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fileInput').click(); } });
     $('btnExport').addEventListener('click', exportDataset);
+    $('btnCloud').addEventListener('click', saveCloud);
   }
 
   // ---------------- pestañas ----------------
@@ -259,7 +306,7 @@
   function renderHeader() {
     $('periodLabel').textContent = periodText(state.recs);
     var meta = state.model.meta;
-    var src = state.sourceKind === 'local' ? 'Excel cargado en este navegador' : 'Dataset integrado (anonimizado)';
+    var src = state.sourceKind === 'local' ? 'Excel cargado en este navegador' : state.sourceKind === 'nube' ? 'Datos en la nube (anonimizados)' : 'Dataset integrado (anonimizado)';
     $('sourceLabel').textContent = src + ': ' + (meta.fileName || '—') + ' · ' + F.int(state.model.qa.totalFile) + ' registros en el archivo · ' +
       F.int(state.recs.length) + ' en la selección actual' + (meta.loadedAt ? ' · generado ' + meta.loadedAt.slice(0, 16).replace('T', ' ') : '');
     document.title = 'Dashboard operativo — SAC, Cobros, Crédito y Ventas ' + periodText(state.recs);
@@ -604,7 +651,7 @@
     var sac = M.computeInboundView(all, 'SAC', all), v = M.computeVentas(all, all), c = M.computeCobros(all, all);
     var cr = M.computeInboundView(all, 'Crédito', all);
     var sl = CONFIG.slThresholdSec, maxh = F.int(CONFIG.maxDurationSec);
-    var src = state.sourceKind === 'local' ? 'Excel cargado en este navegador' : 'dataset integrado (anonimizado)';
+    var src = state.sourceKind === 'local' ? 'Excel cargado en este navegador' : state.sourceKind === 'nube' ? 'datos en la nube (anonimizados)' : 'dataset integrado (anonimizado)';
     var html = '<p class="metodo-intro">Fuente: ' + esc(src) + ' «' + esc(model.meta.fileName || '—') + '». Las cifras de esta pestaña corresponden al archivo completo, sin filtros.</p>';
 
     var notes = alertItems();

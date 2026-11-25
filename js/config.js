@@ -91,7 +91,9 @@
 
     weekdays: ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'],
     locale: 'es-CR',
-    defaultDatasetPath: 'data/dataset.json'
+    defaultDatasetPath: 'data/dataset.json',
+    // URL de la aplicación web de Apps Script (apps-script/Code.gs). Vacía = solo dataset integrado.
+    cloudUrl: ''
   };
 
   root.CTConfig = CONFIG;
