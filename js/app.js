@@ -80,7 +80,7 @@
         window.alert(msg);
         loadDefault();
       })
-      .catch(function (e) { setStatus('No se pudo guardar en la nube: ' + e.message + '. Los datos cargados siguen visibles en este navegador.', true); })
+      .catch(function (e) { setStatus('No se pudo guardar en la nube: ' + e.message.replace(/\.$/, '') + '. Los datos cargados siguen visibles en este navegador.', true); })
       .then(function () { btn.disabled = state.sourceKind !== 'local'; });
   }
 

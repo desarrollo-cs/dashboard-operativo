@@ -93,7 +93,7 @@
     locale: 'es-CR',
     defaultDatasetPath: 'data/dataset.json',
     // URL de la aplicación web de Apps Script (apps-script/Code.gs). Vacía = solo dataset integrado.
-    cloudUrl: ''
+    cloudUrl: 'https://script.google.com/macros/s/AKfycbzV5LuCraTKaNUqC7vqqTTkzGYYrB8l2QgXhAjghEKSt2Q_Y3z2z8KUT83jIyrNSkop/exec'
   };
 
   root.CTConfig = CONFIG;

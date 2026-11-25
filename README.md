@@ -301,3 +301,12 @@ No se probaron:
 ## Personalización
 
 Todo umbral, color, columna o regla de agrupación está en `js/config.js`. Cambiarlo actualiza indicadores, gráficos y metodología sin tocar el resto del código.
+
+## Datos en la nube (Google Sheets)
+
+El dashboard lee y guarda sus datos en la hoja de Google «Dashboard Coocique - datos» mediante el Apps Script de `apps-script/Code.gs`, implementado como aplicación web. La URL está en `js/config.js` → `cloudUrl`.
+
+- **Al abrir**, el sitio carga los registros de la nube. Si la nube está vacía o falla, muestra un aviso y usa `data/dataset.json`.
+- **Para actualizar**, carga el Excel en Metodologías y pulsa «Guardar en la nube». Pide la clave de escritura (se obtiene ejecutando `configurar` en el editor de Apps Script). Los registros se agregan o actualizan por id.
+- **Privacidad:** los nombres de contacto no salen del navegador y los teléfonos se guardan como HMAC-SHA256 con una sal secreta del script. La lectura es abierta para quien tenga la URL.
+- Si se cambia `Code.gs`, hay que crear una nueva versión en «Implementar → Administrar implementaciones» para que el cambio aplique.
